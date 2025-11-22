@@ -1,0 +1,18 @@
+# FastAPI
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# NLP 函式庫
+spacy==3.7.2
+transformers==4.36.0
+torch==2.1.0
+
+# 工具
+httpx==0.25.2
+structlog==23.2.0
+
+# 測試
+pytest==7.4.3
+pytest-asyncio==0.21.1
+

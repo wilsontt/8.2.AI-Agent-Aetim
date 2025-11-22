@@ -1,0 +1,12 @@
+﻿規劃「情資收集代理人 (Collection Agent)」的具體監控清單。這份清單旨在最大化信噪比 (Signal-to-Noise Ratio)，,,,
+"確保我們只收集與資產（VMware, Win 2008/2016, MSSQL, 對外主機）高度相關的情資。",,,
+,,,
+,,,
+AETIM 系統情資來源 (Feed Source) 規劃,,,
+優先級,情資來源 (Threat Feed),對應的 PIR(s),收集策略 (AI 應用點)
+P0 (緊急),CISA KEV (已知遭利用漏洞列表),PIR-04 (老舊系統) PIR-01 (對外暴露),API / JSON Feed - 這是最高優先級。任何在此列表上的 CVE，只要與我們的資產清單匹配（尤其是 Windows Server 2008），都將觸發即時緊急警報。
+P1 (高),NVD (國家漏洞資料庫),PIR-01 (對外暴露) PIR-02 (虛擬化) PIR-03 (應用程式),API - 這是我們的基礎漏洞來源。 - 代理人將使用 API，以您的資產清單中的關鍵字 (CPEs) 進行主動查詢，例如：VMware ESXi 7.0、Microsoft SQL Server 2017、Windows Server 2016。
+P1 (高),廠商安全通報 (Vendor Advisories),PIR-02 (虛擬化) PIR-03 (應用程式),RSS Feeds - VMware: 監控 VMware Security Advisories (VMSA) RSS。 - Microsoft: 監控 MSRC (Security Response Center) 的更新。
+P2 (中),TWCERT/CC & TW-CERT,PIR-05 (本地威脅) PIR-03 (Delphi/EEP TTPs),Email / RSS / Web 爬蟲 - (AI 應用) 這是 AI 專家的關鍵任務。通報（中文）通常是非結構化的。 - 1. AI 代理人將自動讀取新通報。 - 2. 使用 NLP (自然語言處理) 摘要威脅 (例如：勒索軟體活動、釣魚郵件)。 - 3. 提取 IOCs (Indicators of Compromise)，如惡意 IP、網域、檔案 Hash。
+P3 (低),OSINT (公開來源情資),PIR-03 (自行開發 EEP),"關鍵字監控 (GitHub, Security Blogs) - **(AI"
+應用)** 監控與 Delphi 或 EEP 相關的潛在攻擊手法 (TTPs)。 - 這部分較為發散，AI 會過濾雜訊，僅在發現高度相關的攻擊模式時才提報。,,,

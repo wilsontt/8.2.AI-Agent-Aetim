@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  # 後端 API 服務
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend/Dockerfile
+    container_name: aetim-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///./data/aetim.db
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - API_V1_PREFIX=/api/v1
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+    working_dir: /app
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_started
+    networks:
+      - aetim-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # 前端服務
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend/Dockerfile
+    container_name: aetim-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+      - NODE_ENV=${NODE_ENV:-development}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - aetim-network
+    restart: unless-stopped
+
+  # AI/ML 服務
+  ai-service:
+    build:
+      context: ./ai_service
+      dockerfile: ../docker/ai-service/Dockerfile
+    container_name: aetim-ai-service
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - AI_SERVICE_URL=${AI_SERVICE_URL:-http://localhost:8001}
+    volumes:
+      - ./ai_service:/app
+    working_dir: /app
+    networks:
+      - aetim-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis 緩存
+  redis:
+    image: redis:7-alpine
+    container_name: aetim-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - aetim-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # SQLite 資料庫（開發環境）
+  # 注意：生產環境應使用 MS SQL Server
+  # SQLite 使用 volume 掛載，不需要單獨容器
+  # 此服務僅用於確保 data 目錄存在
+  db:
+    image: alpine:latest
+    container_name: aetim-db
+    volumes:
+      - ./data:/data
+    networks:
+      - aetim-network
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /data && chmod 777 /data && tail -f /dev/null"]
+
+volumes:
+  redis-data:
+
+networks:
+  aetim-network:
+    driver: bridge
+

@@ -1,0 +1,39 @@
+# FastAPI 與相關套件
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# 資料庫
+sqlalchemy==2.0.23
+alembic==1.12.1
+aiosqlite==0.19.0
+
+# Redis
+redis==5.0.1
+hiredis==2.2.3
+
+# HTTP 客戶端
+httpx==0.25.2
+
+# 身份驗證
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# 日誌與監控
+structlog==23.2.0
+prometheus-client==0.19.0
+
+# 測試
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+httpx==0.25.2
+
+# 開發工具
+black==23.11.0
+ruff==0.1.6
+mypy==1.7.1
+
