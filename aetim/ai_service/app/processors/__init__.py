@@ -5,7 +5,9 @@
 """
 
 from .cve_extractor import CVEExtractor
+from .product_extractor import ProductExtractor
 
 __all__ = [
     "CVEExtractor",
+    "ProductExtractor",
 ]
