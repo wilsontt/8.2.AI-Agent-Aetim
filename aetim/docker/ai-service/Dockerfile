@@ -21,5 +21,6 @@ COPY . .
 EXPOSE 8001
 
 # 啟動 AI 服務
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+# 使用 app.main:app 因為 main.py 現在在 app/ 目錄下
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
 
