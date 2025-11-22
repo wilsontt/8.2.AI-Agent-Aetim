@@ -19,4 +19,8 @@ structlog==23.2.0
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
+pytest-benchmark==4.0.0
+
+# 效能測試
+psutil==5.9.6
 
