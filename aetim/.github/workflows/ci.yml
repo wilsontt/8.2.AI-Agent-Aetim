@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # 執行所有檢查
+  ci:
+    name: Continuous Integration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run all checks
+        run: |
+          echo "CI pipeline completed"
+          echo "Test and lint workflows run in parallel"
+

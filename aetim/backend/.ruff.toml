@@ -1,0 +1,44 @@
+# Ruff 配置檔案
+
+line-length = 100
+target-version = "py310"
+
+# 啟用的規則
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+# 忽略的規則
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # do not perform function calls in argument defaults
+    "C901",  # too complex
+]
+
+# 排除的檔案/目錄
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    ".pytest_cache",
+    ".mypy_cache",
+    "build",
+    "dist",
+    "*.egg-info",
+    "migrations",
+]
+
+# isort 設定
+[tool.ruff.isort]
+known-first-party = ["backend", "shared_kernel", "asset_management", "threat_intelligence", "analysis_assessment", "reporting_notification", "system_management"]
+
