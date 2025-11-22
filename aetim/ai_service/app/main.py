@@ -14,10 +14,15 @@ import os
 
 from app.models.request import ExtractRequest, SummarizeRequest
 from app.models.response import ExtractResponse, SummarizeResponse
+from app.services.extraction_service import ExtractionService
 
 # 從環境變數讀取配置
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+
+# 全域提取服務實例
+extraction_service = ExtractionService()
 
 
 @asynccontextmanager
@@ -92,13 +97,25 @@ async def extract_threat_info(request: ExtractRequest):
     Returns:
         ExtractResponse: 提取結果（包含 CVE、產品、TTPs、IOCs、信心分數）
     """
-    # TODO: 實作威脅資訊提取（T-2-1-5）
+    # 使用整合提取服務提取威脅資訊
+    result = extraction_service.extract(request.text)
+    
+    # 轉換 IOC 格式（從字典轉換為列表）
+    ioc_list = []
+    for ioc_type, values in result["iocs"].items():
+        for value in values:
+            ioc_list.append({
+                "type": ioc_type,
+                "value": value,
+                "confidence": 0.8,  # IOC 預設信心分數
+            })
+    
     return ExtractResponse(
-        cve=[],
-        products=[],
-        ttps=[],
-        iocs=[],
-        confidence=0.0,
+        cve=result["cve"],
+        products=result["products"],
+        ttps=result["ttps"],
+        iocs=ioc_list,
+        confidence=result["confidence"],
     )
 
 
