@@ -1,0 +1,53 @@
+Alembic 資料庫遷移工具
+
+本目錄包含資料庫遷移腳本。
+
+## 使用方式
+
+### 建立新的遷移腳本
+```bash
+alembic revision --autogenerate -m "描述訊息"
+```
+
+### 執行遷移
+```bash
+# 升級到最新版本
+alembic upgrade head
+
+# 升級一個版本
+alembic upgrade +1
+
+# 降級一個版本
+alembic downgrade -1
+
+# 降級到特定版本
+alembic downgrade <revision>
+```
+
+### 查看遷移歷史
+```bash
+# 查看所有遷移
+alembic history
+
+# 查看當前版本
+alembic current
+```
+
+### 生成 SQL 腳本（不執行）
+```bash
+alembic upgrade head --sql
+```
+
+## 遷移檔案命名規範
+
+根據 plan.md 第 4.3.1 節，遷移檔案命名格式：
+- 格式：`{Timestamp}_{MigrationName}`
+- 範例：`20241121000001_InitialCreate`、`20241122000001_AddThreatAssetAssociation`
+
+## 注意事項
+
+1. 所有遷移腳本必須可重複執行（idempotent）
+2. 遷移腳本必須包含 upgrade() 和 downgrade() 函數
+3. 生產環境執行遷移前必須先備份資料庫
+4. 遷移腳本必須經過測試後才能部署到生產環境
+
