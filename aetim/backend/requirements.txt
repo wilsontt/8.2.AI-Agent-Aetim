@@ -16,6 +16,9 @@ hiredis==2.2.3
 # HTTP 客戶端
 httpx==0.25.2
 
+# Prometheus 客戶端
+prometheus-client==0.19.0
+
 # 身份驗證
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
