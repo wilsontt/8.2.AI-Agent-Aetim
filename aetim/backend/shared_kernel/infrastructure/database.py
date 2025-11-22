@@ -9,14 +9,16 @@ from sqlalchemy.orm import declarative_base
 import os
 from typing import AsyncGenerator
 
-# 資料庫 URL（從環境變數讀取）
 # 確保資料目錄存在
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data")
+DATA_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data"
+)
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# 資料庫 URL（從環境變數讀取）
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"sqlite+aiosqlite:///{os.path.join(DATA_DIR, 'aetim.db')}"
+    f"sqlite+aiosqlite:///{os.path.join(DATA_DIR, 'aetim.db')}",
 )
 
 # 建立非同步引擎
@@ -33,7 +35,7 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False,
 )
 
-# 建立 Base 類別
+# 建立 Base 類別（所有模型繼承此類別）
 Base = declarative_base()
 
 
@@ -57,8 +59,35 @@ async def init_db() -> None:
     
     建立所有資料表（如果不存在）。
     """
-    async with engine.begin() as conn:
-        # 匯入所有模型以確保它們被註冊
-        # TODO: 匯入所有模組的模型
-        await conn.run_sync(Base.metadata.create_all)
+    # 匯入所有模型以確保它們被註冊到 Base.metadata
+    from asset_management.infrastructure.persistence.models import (
+        Asset,
+        AssetProduct,
+    )
+    from threat_intelligence.infrastructure.persistence.models import (
+        ThreatFeed,
+        Threat,
+    )
+    from analysis_assessment.infrastructure.persistence.models import (
+        PIR,
+        ThreatAssetAssociation,
+        RiskAssessment,
+    )
+    from reporting_notification.infrastructure.persistence.models import (
+        Report,
+        NotificationRule,
+        Notification,
+    )
+    from system_management.infrastructure.persistence.models import (
+        User,
+        Role,
+        Permission,
+        UserRole,
+        RolePermission,
+        SystemConfiguration,
+        Schedule,
+    )
+    from system_management.infrastructure.persistence.models import AuditLog
 
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
