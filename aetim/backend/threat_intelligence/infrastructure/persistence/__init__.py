@@ -18,3 +18,8 @@ __all__ = [
     "ThreatAssetAssociationRepository",
 ]
 
+# 為了方便匯入，也提供直接匯出
+ThreatRepository = ThreatRepository
+ThreatMapper = ThreatMapper
+ThreatAssetAssociationRepository = ThreatAssetAssociationRepository
+

@@ -4,7 +4,7 @@
 實作威脅資料持久化邏輯。
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.orm import selectinload
@@ -167,6 +167,71 @@ class ThreatRepository(IThreatRepository):
             logger.error(
                 f"刪除威脅失敗：{str(e)}",
                 extra={"threat_id": threat_id, "error": str(e)}
+            )
+            raise
+    
+    async def count(
+        self,
+        status: Optional[str] = None,
+        threat_feed_id: Optional[str] = None,
+        cve_id: Optional[str] = None,
+        product_name: Optional[str] = None,
+        min_cvss_score: Optional[float] = None,
+        max_cvss_score: Optional[float] = None,
+    ) -> int:
+        """
+        計算威脅總數（支援篩選）
+        
+        Args:
+            status: 狀態篩選（可選）
+            threat_feed_id: 威脅情資來源 ID 篩選（可選）
+            cve_id: CVE 編號篩選（可選）
+            product_name: 產品名稱篩選（可選）
+            min_cvss_score: 最小 CVSS 分數（可選）
+            max_cvss_score: 最大 CVSS 分數（可選）
+        
+        Returns:
+            int: 威脅總數
+        """
+        try:
+            # 建立查詢
+            stmt = select(func.count(ThreatModel.id))
+            
+            # 應用篩選條件
+            conditions = []
+            
+            if status:
+                conditions.append(ThreatModel.status == status)
+            
+            if threat_feed_id:
+                conditions.append(ThreatModel.threat_feed_id == threat_feed_id)
+            
+            if cve_id:
+                conditions.append(ThreatModel.cve == cve_id)
+            
+            if min_cvss_score is not None:
+                conditions.append(ThreatModel.cvss_base_score >= min_cvss_score)
+            
+            if max_cvss_score is not None:
+                conditions.append(ThreatModel.cvss_base_score <= max_cvss_score)
+            
+            # 產品名稱篩選（在 JSON 欄位中搜尋）
+            if product_name:
+                conditions.append(ThreatModel.affected_products.like(f'%"{product_name}"%'))
+            
+            if conditions:
+                stmt = stmt.where(and_(*conditions))
+            
+            # 執行查詢
+            result = await self.session.execute(stmt)
+            count = result.scalar()
+            
+            return count or 0
+            
+        except Exception as e:
+            logger.error(
+                f"計算威脅總數失敗：{str(e)}",
+                extra={"error": str(e)}
             )
             raise
     
