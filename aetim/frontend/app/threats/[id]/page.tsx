@@ -10,7 +10,16 @@ import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { getThreatById, updateThreatStatus } from "@/lib/api/threat";
+import {
+  getThreatAssociations,
+  analyzeThreatAssociations,
+} from "@/lib/api/association";
+import { AssociationVisualization } from "@/components/AssociationVisualization";
 import type { ThreatDetailResponse } from "@/types/threat";
+import type {
+  ThreatAssociationListResponse,
+  ThreatAssociationParams,
+} from "@/types/association";
 
 export default function ThreatDetailPage() {
   const params = useParams();
@@ -23,12 +32,28 @@ export default function ThreatDetailPage() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [newStatus, setNewStatus] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [associations, setAssociations] = useState<ThreatAssociationListResponse | null>(null);
+  const [associationsLoading, setAssociationsLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [associationParams, setAssociationParams] = useState<ThreatAssociationParams>({
+    page: 1,
+    page_size: 20,
+    sort_by: "match_confidence",
+    sort_order: "desc",
+  });
 
   useEffect(() => {
     if (threatId) {
       loadThreat();
+      loadAssociations();
     }
   }, [threatId]);
+
+  useEffect(() => {
+    if (threatId) {
+      loadAssociations();
+    }
+  }, [threatId, associationParams]);
 
   const loadThreat = async () => {
     try {
@@ -41,6 +66,32 @@ export default function ThreatDetailPage() {
       setError(err instanceof Error ? err.message : "載入威脅詳情失敗");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAssociations = async () => {
+    try {
+      setAssociationsLoading(true);
+      const data = await getThreatAssociations(threatId, associationParams);
+      setAssociations(data);
+    } catch (err) {
+      console.error("載入關聯失敗：", err);
+    } finally {
+      setAssociationsLoading(false);
+    }
+  };
+
+  const handleAnalyze = async () => {
+    try {
+      setIsAnalyzing(true);
+      await analyzeThreatAssociations(threatId);
+      // 重新載入威脅詳情和關聯
+      await loadThreat();
+      await loadAssociations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "執行關聯分析失敗");
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -354,62 +405,236 @@ export default function ThreatDetailPage() {
           </div>
         )}
 
-        {/* 關聯的資產 */}
-        {associated_assets.length > 0 && (
-          <div className="mb-6">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">關聯的資產</h2>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      資產 ID
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      匹配類型
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      匹配信心分數
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      建立時間
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {associated_assets.map((asset, index) => (
-                    <tr key={index}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        <button
-                          onClick={() => router.push(`/assets/${asset.asset_id}`)}
-                          className="text-blue-600 hover:text-blue-800"
-                        >
-                          {asset.asset_id}
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {asset.match_type}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {(asset.match_confidence * 100).toFixed(1)}%
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {asset.created_at
-                          ? new Date(asset.created_at).toLocaleString("zh-TW")
-                          : "-"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* 關聯的資產（使用新的 API） */}
+        <div className="mb-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">關聯的資產</h2>
+            <Button
+              variant="primary"
+              onClick={handleAnalyze}
+              isLoading={isAnalyzing}
+              disabled={isAnalyzing}
+            >
+              執行關聯分析
+            </Button>
+          </div>
+
+          {/* 篩選和排序 */}
+          <div className="mb-4 flex flex-wrap gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">最小信心分數：</label>
+              <input
+                type="number"
+                min="0"
+                max="1"
+                step="0.1"
+                value={associationParams.min_confidence || ""}
+                onChange={(e) =>
+                  setAssociationParams({
+                    ...associationParams,
+                    min_confidence: e.target.value ? parseFloat(e.target.value) : undefined,
+                    page: 1,
+                  })
+                }
+                className="w-20 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                placeholder="0.0"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">匹配類型：</label>
+              <Select
+                value={associationParams.match_type || ""}
+                onChange={(e) =>
+                  setAssociationParams({
+                    ...associationParams,
+                    match_type: e.target.value || undefined,
+                    page: 1,
+                  })
+                }
+                options={[
+                  { value: "", label: "全部" },
+                  { value: "exact_product_exact_version", label: "精確產品+精確版本" },
+                  { value: "exact_product_version_range", label: "精確產品+版本範圍" },
+                  { value: "exact_product_major_version", label: "精確產品+主版本" },
+                  { value: "exact_product_no_version", label: "精確產品+無版本" },
+                  { value: "fuzzy_product_exact_version", label: "模糊產品+精確版本" },
+                  { value: "fuzzy_product_version_range", label: "模糊產品+版本範圍" },
+                  { value: "fuzzy_product_major_version", label: "模糊產品+主版本" },
+                  { value: "fuzzy_product_no_version", label: "模糊產品+無版本" },
+                  { value: "os_match", label: "作業系統匹配" },
+                ]}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">排序：</label>
+              <Select
+                value={associationParams.sort_by || "match_confidence"}
+                onChange={(e) =>
+                  setAssociationParams({
+                    ...associationParams,
+                    sort_by: e.target.value as "match_confidence" | "created_at",
+                  })
+                }
+                options={[
+                  { value: "match_confidence", label: "信心分數" },
+                  { value: "created_at", label: "建立時間" },
+                ]}
+              />
+              <Select
+                value={associationParams.sort_order || "desc"}
+                onChange={(e) =>
+                  setAssociationParams({
+                    ...associationParams,
+                    sort_order: e.target.value as "asc" | "desc",
+                  })
+                }
+                options={[
+                  { value: "desc", label: "降序" },
+                  { value: "asc", label: "升序" },
+                ]}
+              />
             </div>
           </div>
-        )}
 
-        {associated_assets.length === 0 && (
-          <div className="mb-6">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">關聯的資產</h2>
+          {associationsLoading ? (
+            <div className="text-center text-gray-500">載入中...</div>
+          ) : associations && associations.items.length > 0 ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        資產 ID
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        匹配類型
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        匹配信心分數
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        匹配詳情
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        建立時間
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {associations.items.map((association) => (
+                      <tr key={association.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <button
+                            onClick={() => router.push(`/assets/${association.asset_id}`)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            {association.asset_id}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {association.match_type}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+                              association.match_confidence >= 0.9
+                                ? "bg-green-100 text-green-800"
+                                : association.match_confidence >= 0.7
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {(association.match_confidence * 100).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          {association.match_details?.matched_products &&
+                          association.match_details.matched_products.length > 0 ? (
+                            <div className="space-y-1">
+                              {association.match_details.matched_products.map((product, idx) => (
+                                <div key={idx} className="text-xs">
+                                  {product.threat_product && product.asset_product && (
+                                    <span>
+                                      {product.threat_product} ({product.threat_version || "N/A"}) ↔{" "}
+                                      {product.asset_product} ({product.asset_version || "N/A"})
+                                    </span>
+                                  )}
+                                  {product.threat_os && product.asset_os && (
+                                    <span>
+                                      OS: {product.threat_os} ↔ {product.asset_os}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {association.created_at
+                            ? new Date(association.created_at).toLocaleString("zh-TW")
+                            : "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {/* 分頁 */}
+              {associations.total_pages > 1 && (
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-gray-700">
+                    顯示 {((associationParams.page || 1) - 1) * (associationParams.page_size || 20) + 1} 到{" "}
+                    {Math.min(
+                      (associationParams.page || 1) * (associationParams.page_size || 20),
+                      associations.total,
+                    )}{" "}
+                    筆，共 {associations.total} 筆
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setAssociationParams({
+                          ...associationParams,
+                          page: (associationParams.page || 1) - 1,
+                        })
+                      }
+                      disabled={(associationParams.page || 1) <= 1}
+                    >
+                      上一頁
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        setAssociationParams({
+                          ...associationParams,
+                          page: (associationParams.page || 1) + 1,
+                        })
+                      }
+                      disabled={(associationParams.page || 1) >= associations.total_pages}
+                    >
+                      下一頁
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
             <p className="text-sm text-gray-500">目前沒有關聯的資產</p>
+          )}
+        </div>
+
+        {/* 關聯分析視覺化 */}
+        {associations && associations.items.length > 0 && (
+          <div className="mb-6">
+            <AssociationVisualization
+              associations={associations.items}
+              threatId={threat.id}
+              threatTitle={threat.title}
+            />
           </div>
         )}
       </div>
