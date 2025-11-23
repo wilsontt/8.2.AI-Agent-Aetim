@@ -14,6 +14,7 @@ from threat_intelligence.domain.entities.threat_product import ThreatProduct
 from asset_management.domain.aggregates.asset import Asset
 from asset_management.domain.entities.asset_product import AssetProduct
 from .product_name_matcher import ProductNameMatcher
+from .version_matcher import VersionMatcher, VersionMatchType
 from shared_kernel.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,14 +65,20 @@ class AssociationAnalysisService:
     負責分析威脅與資產的關聯，實作模糊比對邏輯（AC-010-1, AC-010-2）。
     """
     
-    def __init__(self, product_name_matcher: Optional[ProductNameMatcher] = None):
+    def __init__(
+        self,
+        product_name_matcher: Optional[ProductNameMatcher] = None,
+        version_matcher: Optional[VersionMatcher] = None,
+    ):
         """
         初始化關聯分析服務
         
         Args:
             product_name_matcher: 產品名稱比對器（可選，預設建立新實例）
+            version_matcher: 版本比對器（可選，預設建立新實例）
         """
         self.product_name_matcher = product_name_matcher or ProductNameMatcher()
+        self.version_matcher = version_matcher or VersionMatcher()
     
     def analyze(
         self,
@@ -268,14 +275,11 @@ class AssociationAnalysisService:
         self,
         threat_version: Optional[str],
         asset_version: Optional[str],
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         比對版本（AC-010-2）
         
-        支援：
-        - 精確版本匹配
-        - 版本範圍匹配（如 "7.0.x" 匹配 "7.0.1", "7.0.2" 等）
-        - 主版本匹配（如 "7" 匹配 "7.0", "7.1", "7.2" 等）
+        使用 VersionMatcher 進行版本比對。
         
         Args:
             threat_version: 威脅產品版本
@@ -284,61 +288,27 @@ class AssociationAnalysisService:
         Returns:
             Dict: 包含 is_match, match_type 的字典
         """
-        # 如果兩個版本都為空，視為匹配（無版本資訊）
-        if not threat_version and not asset_version:
-            return {
-                "is_match": True,
-                "match_type": MatchType.EXACT_PRODUCT_NO_VERSION,
-            }
+        # 使用版本比對器進行比對
+        version_result = self.version_matcher.match(
+            threat_version,
+            asset_version,
+            allow_range=True,
+        )
         
-        # 如果威脅版本為空，視為匹配（威脅影響所有版本）
-        if not threat_version:
-            return {
-                "is_match": True,
-                "match_type": MatchType.EXACT_PRODUCT_NO_VERSION,
-            }
+        # 將 VersionMatchType 轉換為 MatchType
+        match_type_mapping = {
+            VersionMatchType.EXACT: MatchType.EXACT_PRODUCT_EXACT_VERSION,
+            VersionMatchType.RANGE: MatchType.EXACT_PRODUCT_VERSION_RANGE,
+            VersionMatchType.MAJOR: MatchType.EXACT_PRODUCT_MAJOR_VERSION,
+            VersionMatchType.NO_VERSION: MatchType.EXACT_PRODUCT_NO_VERSION,
+            VersionMatchType.COMPARISON: MatchType.EXACT_PRODUCT_VERSION_RANGE,
+        }
         
-        # 如果資產版本為空，無法比對
-        if not asset_version:
-            return {
-                "is_match": False,
-                "match_type": None,
-            }
-        
-        # 標準化版本字串
-        threat_version_clean = self._normalize_version(threat_version)
-        asset_version_clean = self._normalize_version(asset_version)
-        
-        # 1. 精確版本匹配
-        if threat_version_clean == asset_version_clean:
-            return {
-                "is_match": True,
-                "match_type": MatchType.EXACT_PRODUCT_EXACT_VERSION,
-            }
-        
-        # 2. 版本範圍匹配（如 "7.0.x" 匹配 "7.0.1", "7.0.2" 等）
-        if threat_version_clean.endswith(".x"):
-            base_version = threat_version_clean[:-2]  # 移除 ".x"
-            if asset_version_clean.startswith(base_version):
-                return {
-                    "is_match": True,
-                    "match_type": MatchType.EXACT_PRODUCT_VERSION_RANGE,
-                }
-        
-        # 3. 主版本匹配（如 "7" 匹配 "7.0", "7.1", "7.2" 等）
-        threat_version_parts = threat_version_clean.split(".")
-        asset_version_parts = asset_version_clean.split(".")
-        
-        if len(threat_version_parts) >= 1 and len(asset_version_parts) >= 1:
-            if threat_version_parts[0] == asset_version_parts[0]:
-                return {
-                    "is_match": True,
-                    "match_type": MatchType.EXACT_PRODUCT_MAJOR_VERSION,
-                }
+        match_type = match_type_mapping.get(version_result.match_type) if version_result.match_type else None
         
         return {
-            "is_match": False,
-            "match_type": None,
+            "is_match": version_result.is_match,
+            "match_type": match_type,
         }
     
     def _match_operating_system(
@@ -406,28 +376,6 @@ class AssociationAnalysisService:
                 )
         
         return None
-    
-    def _normalize_version(self, version: str) -> str:
-        """
-        標準化版本字串
-        
-        Args:
-            version: 版本字串
-        
-        Returns:
-            str: 標準化後的版本字串
-        """
-        if not version:
-            return ""
-        
-        # 移除前後空格
-        normalized = version.strip()
-        
-        # 移除常見前綴（如 "v", "version"）
-        normalized = re.sub(r'^v(ersion)?\s*', '', normalized, flags=re.IGNORECASE)
-        
-        return normalized
-    
     
     def _calculate_confidence(
         self,
