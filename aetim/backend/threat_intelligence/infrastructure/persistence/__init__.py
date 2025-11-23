@@ -6,9 +6,15 @@
 
 from .threat_feed_repository import ThreatFeedRepository
 from .threat_feed_mapper import ThreatFeedMapper
+from .threat_repository import ThreatRepository
+from .threat_mapper import ThreatMapper
+from .threat_asset_association_repository import ThreatAssetAssociationRepository
 
 __all__ = [
     "ThreatFeedRepository",
     "ThreatFeedMapper",
+    "ThreatRepository",
+    "ThreatMapper",
+    "ThreatAssetAssociationRepository",
 ]
 
