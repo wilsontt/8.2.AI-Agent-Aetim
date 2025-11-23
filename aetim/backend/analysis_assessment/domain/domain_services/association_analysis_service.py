@@ -8,12 +8,12 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from enum import Enum
 import re
-from difflib import SequenceMatcher
 
 from threat_intelligence.domain.aggregates.threat import Threat
 from threat_intelligence.domain.entities.threat_product import ThreatProduct
 from asset_management.domain.aggregates.asset import Asset
 from asset_management.domain.entities.asset_product import AssetProduct
+from .product_name_matcher import ProductNameMatcher
 from shared_kernel.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -64,19 +64,14 @@ class AssociationAnalysisService:
     負責分析威脅與資產的關聯，實作模糊比對邏輯（AC-010-1, AC-010-2）。
     """
     
-    # 產品名稱相似度閾值（≥ 0.8 視為匹配）
-    PRODUCT_SIMILARITY_THRESHOLD = 0.8
-    
-    # 產品名稱標準化映射（處理常見變體）
-    PRODUCT_NAME_NORMALIZATIONS = {
-        "ms sql": "microsoft sql server",
-        "mssql": "microsoft sql server",
-        "sql server": "microsoft sql server",
-        "win server": "windows server",
-        "win": "windows",
-        "vmware esxi": "vmware esxi",
-        "esxi": "vmware esxi",
-    }
+    def __init__(self, product_name_matcher: Optional[ProductNameMatcher] = None):
+        """
+        初始化關聯分析服務
+        
+        Args:
+            product_name_matcher: 產品名稱比對器（可選，預設建立新實例）
+        """
+        self.product_name_matcher = product_name_matcher or ProductNameMatcher()
     
     def analyze(
         self,
@@ -187,12 +182,15 @@ class AssociationAnalysisService:
         Returns:
             Optional[AssociationResult]: 比對結果
         """
-        # 標準化產品名稱
-        threat_name_normalized = self._normalize_product_name(threat_product.product_name)
-        asset_name_normalized = self._normalize_product_name(asset_product.product_name)
+        # 使用產品名稱比對器進行比對
+        match_result = self.product_name_matcher.match(
+            threat_product.product_name,
+            asset_product.product_name,
+            allow_fuzzy=True,
+        )
         
         # 1. 精確匹配
-        if threat_name_normalized == asset_name_normalized:
+        if match_result.is_exact and match_result.is_match:
             # 精確產品名稱匹配，檢查版本
             version_match = self._match_version(
                 threat_product.product_version,
@@ -224,12 +222,7 @@ class AssociationAnalysisService:
                 )
         
         # 2. 模糊匹配
-        similarity = self._calculate_product_similarity(
-            threat_name_normalized,
-            asset_name_normalized,
-        )
-        
-        if similarity >= self.PRODUCT_SIMILARITY_THRESHOLD:
+        if match_result.is_match and not match_result.is_exact:
             # 模糊產品名稱匹配，檢查版本
             version_match = self._match_version(
                 threat_product.product_version,
@@ -251,7 +244,7 @@ class AssociationAnalysisService:
                 confidence = self._calculate_confidence(
                     is_exact_product=False,
                     version_match_type=match_type,
-                    product_similarity=similarity,
+                    product_similarity=match_result.similarity,
                 )
                 
                 return AssociationResult(
@@ -372,14 +365,16 @@ class AssociationAnalysisService:
         if not os_products:
             return None
         
-        # 標準化作業系統名稱
-        asset_os_normalized = self._normalize_product_name(asset.operating_system)
-        
         for os_product in os_products:
-            threat_os_normalized = self._normalize_product_name(os_product.product_name)
+            # 使用產品名稱比對器進行比對
+            os_match_result = self.product_name_matcher.match(
+                os_product.product_name,
+                asset.operating_system,
+                allow_fuzzy=True,
+            )
             
             # 精確匹配
-            if threat_os_normalized == asset_os_normalized:
+            if os_match_result.is_exact and os_match_result.is_match:
                 return AssociationResult(
                     threat_id=threat.id,
                     asset_id=asset.id,
@@ -395,16 +390,11 @@ class AssociationAnalysisService:
                 )
             
             # 模糊匹配
-            similarity = self._calculate_product_similarity(
-                threat_os_normalized,
-                asset_os_normalized,
-            )
-            
-            if similarity >= self.PRODUCT_SIMILARITY_THRESHOLD:
+            if os_match_result.is_match and not os_match_result.is_exact:
                 return AssociationResult(
                     threat_id=threat.id,
                     asset_id=asset.id,
-                    confidence=0.8 * similarity,  # 模糊匹配的信心分數
+                    confidence=0.8 * os_match_result.similarity,  # 模糊匹配的信心分數
                     match_type=MatchType.OS_MATCH,
                     matched_products=[
                         {
@@ -416,46 +406,6 @@ class AssociationAnalysisService:
                 )
         
         return None
-    
-    def _normalize_product_name(self, product_name: str) -> str:
-        """
-        標準化產品名稱（AC-010-2）
-        
-        處理：
-        - 移除版本號
-        - 移除特殊字元
-        - 統一大小寫
-        - 處理常見變體
-        
-        Args:
-            product_name: 產品名稱
-        
-        Returns:
-            str: 標準化後的產品名稱
-        """
-        if not product_name:
-            return ""
-        
-        # 轉為小寫
-        normalized = product_name.lower().strip()
-        
-        # 移除版本號（如 "Windows Server 2019" -> "Windows Server"）
-        # 匹配常見版本格式：年份（如 2019, 2020）、版本號（如 7.0, 10.0）
-        normalized = re.sub(r'\s+\d{4}$', '', normalized)  # 移除年份
-        normalized = re.sub(r'\s+\d+\.\d+.*$', '', normalized)  # 移除版本號
-        
-        # 處理常見變體
-        for variant, standard in self.PRODUCT_NAME_NORMALIZATIONS.items():
-            if variant in normalized:
-                normalized = normalized.replace(variant, standard)
-        
-        # 移除特殊字元（保留空格）
-        normalized = re.sub(r'[^\w\s]', '', normalized)
-        
-        # 移除多餘空格
-        normalized = re.sub(r'\s+', ' ', normalized).strip()
-        
-        return normalized
     
     def _normalize_version(self, version: str) -> str:
         """
@@ -478,22 +428,6 @@ class AssociationAnalysisService:
         
         return normalized
     
-    def _calculate_product_similarity(
-        self,
-        name1: str,
-        name2: str,
-    ) -> float:
-        """
-        計算產品名稱相似度（使用 SequenceMatcher）
-        
-        Args:
-            name1: 產品名稱 1
-            name2: 產品名稱 2
-        
-        Returns:
-            float: 相似度（0.0 - 1.0）
-        """
-        return SequenceMatcher(None, name1, name2).ratio()
     
     def _calculate_confidence(
         self,
