@@ -24,6 +24,12 @@ export default function Home() {
         >
           威脅來源管理
         </Link>
+        <Link
+          href="/threats"
+          className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          威脅管理
+        </Link>
       </div>
     </main>
   );

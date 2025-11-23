@@ -1,0 +1,470 @@
+/**
+ * 威脅詳情頁面
+ */
+
+"use client";
+
+import React, { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
+import { Modal } from "@/components/ui/Modal";
+import { getThreatById, updateThreatStatus } from "@/lib/api/threat";
+import type { ThreatDetailResponse } from "@/types/threat";
+
+export default function ThreatDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const threatId = params.id as string;
+
+  const [threatDetail, setThreatDetail] = useState<ThreatDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [newStatus, setNewStatus] = useState<string>("");
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    if (threatId) {
+      loadThreat();
+    }
+  }, [threatId]);
+
+  const loadThreat = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getThreatById(threatId);
+      setThreatDetail(data);
+      setNewStatus(data.threat.status);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "載入威脅詳情失敗");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async () => {
+    if (!threatDetail || !newStatus) return;
+
+    try {
+      setIsUpdating(true);
+      await updateThreatStatus(threatId, { status: newStatus as any });
+      setShowStatusModal(false);
+      // 重新載入威脅詳情
+      await loadThreat();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "更新威脅狀態失敗");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const getSeverityColor = (severity?: string) => {
+    switch (severity) {
+      case "Critical":
+        return "bg-red-100 text-red-800";
+      case "High":
+        return "bg-orange-100 text-orange-800";
+      case "Medium":
+        return "bg-yellow-100 text-yellow-800";
+      case "Low":
+        return "bg-green-100 text-green-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "New":
+        return "bg-blue-100 text-blue-800";
+      case "Analyzing":
+        return "bg-yellow-100 text-yellow-800";
+      case "Processed":
+        return "bg-green-100 text-green-800";
+      case "Closed":
+        return "bg-gray-100 text-gray-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "New":
+        return "新增";
+      case "Analyzing":
+        return "分析中";
+      case "Processed":
+        return "已處理";
+      case "Closed":
+        return "已關閉";
+      default:
+        return status;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center text-gray-500">載入中...</div>
+      </div>
+    );
+  }
+
+  if (error || !threatDetail) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="rounded-md bg-red-50 p-4">
+          <p className="text-sm text-red-800">{error || "威脅不存在"}</p>
+        </div>
+        <Button variant="outline" onClick={() => router.push("/threats")} className="mt-4">
+          返回清單
+        </Button>
+      </div>
+    );
+  }
+
+  const { threat, associated_assets } = threatDetail;
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">威脅詳情</h1>
+        <div className="flex space-x-2">
+          <Button variant="outline" onClick={() => router.push("/threats")}>
+            返回清單
+          </Button>
+          <Button variant="primary" onClick={() => setShowStatusModal(true)}>
+            更新狀態
+          </Button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-6 shadow">
+        {/* 基本資訊 */}
+        <div className="mb-6">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">基本資訊</h2>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div>
+              <dl className="space-y-3">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">CVE 編號</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{threat.cve_id || "-"}</dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">標題</dt>
+                  <dd className="mt-1 text-sm text-gray-900">{threat.title}</dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">嚴重程度</dt>
+                  <dd className="mt-1">
+                    {threat.severity ? (
+                      <span
+                        className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getSeverityColor(threat.severity)}`}
+                      >
+                        {threat.severity}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-gray-500">-</span>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">CVSS 基礎分數</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {threat.cvss_base_score?.toFixed(1) || "-"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">CVSS 向量</dt>
+                  <dd className="mt-1 text-sm text-gray-900 font-mono text-xs">
+                    {threat.cvss_vector || "-"}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <div>
+              <dl className="space-y-3">
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">狀態</dt>
+                  <dd className="mt-1">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getStatusColor(threat.status)}`}
+                    >
+                      {getStatusLabel(threat.status)}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">發布日期</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {threat.published_date
+                      ? new Date(threat.published_date).toLocaleDateString("zh-TW")
+                      : "-"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">收集時間</dt>
+                  <dd className="mt-1 text-sm text-gray-900">
+                    {threat.collected_at
+                      ? new Date(threat.collected_at).toLocaleString("zh-TW")
+                      : "-"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-sm font-medium text-gray-500">來源 URL</dt>
+                  <dd className="mt-1">
+                    {threat.source_url ? (
+                      <a
+                        href={threat.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:text-blue-800"
+                      >
+                        {threat.source_url}
+                      </a>
+                    ) : (
+                      <span className="text-sm text-gray-500">-</span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+        </div>
+
+        {/* 描述 */}
+        {threat.description && (
+          <div className="mb-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">描述</h2>
+            <p className="text-sm text-gray-900 whitespace-pre-wrap">{threat.description}</p>
+          </div>
+        )}
+
+        {/* 產品清單 */}
+        {threat.products.length > 0 && (
+          <div className="mb-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">受影響產品</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      產品名稱
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      版本
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      類型
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {threat.products.map((product) => (
+                    <tr key={product.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {product.product_name}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {product.product_version || "-"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {product.product_type || "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TTPs */}
+        {threat.ttps.length > 0 && (
+          <div className="mb-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">TTPs (戰術、技術和程序)</h2>
+            <div className="flex flex-wrap gap-2">
+              {threat.ttps.map((ttp, index) => (
+                <span
+                  key={index}
+                  className="inline-flex rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-800"
+                >
+                  {ttp}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* IOCs */}
+        {(threat.iocs.ips?.length || threat.iocs.domains?.length || threat.iocs.hashes?.length) && (
+          <div className="mb-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">IOCs (入侵指標)</h2>
+            <div className="space-y-4">
+              {threat.iocs.ips && threat.iocs.ips.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-sm font-medium text-gray-700">IP 位址</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {threat.iocs.ips.map((ip, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex rounded-md bg-red-50 px-3 py-1 text-sm font-mono text-red-800"
+                      >
+                        {ip}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {threat.iocs.domains && threat.iocs.domains.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-sm font-medium text-gray-700">網域</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {threat.iocs.domains.map((domain, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex rounded-md bg-orange-50 px-3 py-1 text-sm font-mono text-orange-800"
+                      >
+                        {domain}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {threat.iocs.hashes && threat.iocs.hashes.length > 0 && (
+                <div>
+                  <h3 className="mb-2 text-sm font-medium text-gray-700">雜湊值</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {threat.iocs.hashes.map((hash, index) => (
+                      <span
+                        key={index}
+                        className="inline-flex rounded-md bg-purple-50 px-3 py-1 text-xs font-mono text-purple-800"
+                      >
+                        {hash}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 關聯的資產 */}
+        {associated_assets.length > 0 && (
+          <div className="mb-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">關聯的資產</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      資產 ID
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      匹配類型
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      匹配信心分數
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      建立時間
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {associated_assets.map((asset, index) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <button
+                          onClick={() => router.push(`/assets/${asset.asset_id}`)}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          {asset.asset_id}
+                        </button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {asset.match_type}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {(asset.match_confidence * 100).toFixed(1)}%
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {asset.created_at
+                          ? new Date(asset.created_at).toLocaleString("zh-TW")
+                          : "-"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {associated_assets.length === 0 && (
+          <div className="mb-6">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">關聯的資產</h2>
+            <p className="text-sm text-gray-500">目前沒有關聯的資產</p>
+          </div>
+        )}
+      </div>
+
+      {/* 更新狀態模態 */}
+      <Modal
+        isOpen={showStatusModal}
+        onClose={() => setShowStatusModal(false)}
+        title="更新威脅狀態"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">目前狀態</label>
+            <p className="mt-1 text-sm text-gray-900">
+              <span
+                className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getStatusColor(threat.status)}`}
+              >
+                {getStatusLabel(threat.status)}
+              </span>
+            </p>
+          </div>
+
+          <div>
+            <Select
+              label="新狀態"
+              id="new_status"
+              name="new_status"
+              value={newStatus}
+              onChange={(e) => setNewStatus(e.target.value)}
+              options={[
+                { value: "New", label: "新增" },
+                { value: "Analyzing", label: "分析中" },
+                { value: "Processed", label: "已處理" },
+                { value: "Closed", label: "已關閉" },
+              ]}
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-md bg-red-50 p-3">
+              <p className="text-sm text-red-800">{error}</p>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-2">
+            <Button variant="outline" onClick={() => setShowStatusModal(false)}>
+              取消
+            </Button>
+            <Button variant="primary" onClick={handleUpdateStatus} isLoading={isUpdating}>
+              確認更新
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
