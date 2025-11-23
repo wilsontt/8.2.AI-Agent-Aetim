@@ -15,6 +15,7 @@ from ...domain.aggregates.threat import Threat
 from ...infrastructure.external_services.collector_factory import CollectorFactory
 from ...infrastructure.external_services.collector_interface import ICollector
 from ...infrastructure.external_services.ai_service_client import AIServiceClient
+from .threat_extraction_service import ThreatExtractionService
 from ...infrastructure.external_services.retry_handler import RetryHandler
 from shared_kernel.infrastructure.logging import get_logger
 
@@ -60,6 +61,11 @@ class ThreatCollectionService:
             max_retries=3,
             initial_delay=1.0,
             max_delay=60.0,
+        )
+        # 建立威脅提取服務
+        self.threat_extraction_service = ThreatExtractionService(
+            ai_service_client=ai_service_client,
+            use_fallback=True,
         )
     
     async def collect_from_feed(
@@ -170,9 +176,9 @@ class ThreatCollectionService:
                     # 4.1 標準化為統一資料模型（AC-008-5）
                     standardized_threat = await self._standardize_threat(threat, feed)
                     
-                    # 4.2 使用 AI 服務處理非結構化資料（AC-008-7）
-                    if use_ai and self.ai_service_client:
-                        await self._enhance_with_ai(standardized_threat)
+                    # 4.2 使用威脅提取服務處理非結構化資料（AC-008-7）
+                    if use_ai:
+                        await self._enhance_with_extraction_service(standardized_threat)
                     
                     # 4.3 儲存威脅
                     await self.threat_repository.save(standardized_threat)
@@ -340,17 +346,14 @@ class ThreatCollectionService:
         
         return threat
     
-    async def _enhance_with_ai(self, threat: Threat) -> None:
+    async def _enhance_with_extraction_service(self, threat: Threat) -> None:
         """
-        使用 AI 服務增強威脅資訊（AC-008-7）
+        使用威脅提取服務增強威脅資訊（AC-008-7）
         
         Args:
             threat: 威脅聚合根
         """
-        if not self.ai_service_client:
-            return
-        
-        # 組合文字內容用於 AI 提取
+        # 組合文字內容用於提取
         text_parts = []
         
         if threat.title:
@@ -364,57 +367,55 @@ class ThreatCollectionService:
         text = "\n".join(text_parts)
         
         try:
-            # 呼叫 AI 服務提取威脅資訊
-            ai_result = await self.ai_service_client.extract_threat_info(text)
+            # 使用威脅提取服務提取威脅資訊（包含回退機制）
+            extracted_info = await self.threat_extraction_service.extract_threat_info(text)
             
-            # 更新威脅資訊
-            # CVE
-            if ai_result.get("cve") and not threat.cve_id:
-                # 如果威脅還沒有 CVE，使用 AI 提取的結果
-                cves = ai_result["cve"]
-                if cves:
-                    threat.cve_id = cves[0]  # 使用第一個 CVE
-            
-            # 產品
-            if ai_result.get("products"):
-                for product_info in ai_result["products"]:
-                    threat.add_product(
-                        product_name=product_info.get("name", ""),
-                        product_version=product_info.get("version"),
-                    )
-            
-            # TTPs
-            if ai_result.get("ttps"):
-                for ttp in ai_result["ttps"]:
-                    threat.add_ttp(ttp)
-            
-            # IOCs
-            if ai_result.get("iocs"):
-                iocs = ai_result["iocs"]
-                for ioc_type, values in iocs.items():
-                    for value in values:
-                        threat.add_ioc(ioc_type, value)
-            
-            logger.debug(
-                "AI 服務增強威脅資訊完成",
+            logger.info(
+                f"威脅資訊提取完成（來源：{extracted_info.source}，信心分數：{extracted_info.confidence:.2f}）",
                 extra={
                     "threat_id": threat.id,
-                    "cve_count": len(ai_result.get("cve", [])),
-                    "product_count": len(ai_result.get("products", [])),
-                    "ttp_count": len(ai_result.get("ttps", [])),
-                    "confidence": ai_result.get("confidence", 0.0),
+                    "source": extracted_info.source,
+                    "confidence": extracted_info.confidence,
                 }
             )
             
+            # 更新威脅資訊
+            # CVE
+            if extracted_info.cves and not threat.cve_id:
+                # 如果威脅還沒有 CVE，使用提取的結果
+                threat.cve_id = extracted_info.cves[0]  # 使用第一個 CVE
+            
+            # 產品
+            if extracted_info.products:
+                for product_info in extracted_info.products:
+                    threat.add_product(
+                        product_name=product_info.get("product_name", ""),
+                        product_version=product_info.get("product_version"),
+                        product_type=product_info.get("product_type"),
+                        original_text=product_info.get("original_text"),
+                    )
+            
+            # TTPs
+            if extracted_info.ttps:
+                for ttp in extracted_info.ttps:
+                    threat.add_ttp(ttp)
+            
+            # IOCs
+            if extracted_info.iocs:
+                for ioc_type, ioc_values in extracted_info.iocs.items():
+                    if isinstance(ioc_values, list):
+                        for ioc_value in ioc_values:
+                            threat.add_ioc(ioc_type, ioc_value)
+        
         except Exception as e:
             logger.warning(
-                f"AI 服務增強威脅資訊失敗：{str(e)}",
+                f"威脅資訊提取失敗：{str(e)}",
                 extra={
                     "threat_id": threat.id,
                     "error": str(e),
                 }
             )
-            # AI 服務失敗不影響威脅的儲存，只記錄警告
+            # 提取失敗不影響威脅儲存，繼續處理
     
     async def _update_collection_status(
         self,
