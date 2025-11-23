@@ -4,9 +4,8 @@
 
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Table } from "@/components/ui/Table";
 import { Pagination } from "@/components/ui/Pagination";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -17,6 +16,8 @@ import {
   type Threat,
   type ThreatSearchParams,
 } from "@/lib/api/threat";
+import { debounce } from "@/lib/utils/debounce";
+import { highlightText } from "@/lib/utils/highlight";
 
 export default function ThreatsPage() {
   const router = useRouter();
@@ -41,8 +42,39 @@ export default function ThreatsPage() {
     max_cvss_score: undefined,
   });
 
+  // Debounced 搜尋函數
+  const debouncedSearch = useMemo(
+    () =>
+      debounce(async (query: string) => {
+        if (query.trim()) {
+          setIsSearching(true);
+          setPage(1);
+          try {
+            setLoading(true);
+            setError(null);
+            const response = await searchThreats(query, 1, pageSize);
+            setThreats(response.items);
+            setTotalCount(response.total);
+            setTotalPages(response.total_pages);
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "搜尋威脅失敗");
+          } finally {
+            setLoading(false);
+          }
+        } else {
+          setIsSearching(false);
+          loadThreats();
+        }
+      }, 500),
+    [pageSize],
+  );
+
   useEffect(() => {
-    loadThreats();
+    if (!isSearching) {
+      // 一般查詢模式
+      loadThreats();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, sortBy, sortOrder, filters]);
 
   const loadThreats = async () => {
@@ -58,13 +90,7 @@ export default function ThreatsPage() {
         ...filters,
       };
 
-      let response;
-      if (isSearching && searchQuery.trim()) {
-        response = await searchThreats(searchQuery, page, pageSize);
-      } else {
-        response = await getThreats(params);
-      }
-
+      const response = await getThreats(params);
       setThreats(response.items);
       setTotalCount(response.total);
       setTotalPages(response.total_pages);
@@ -85,10 +111,27 @@ export default function ThreatsPage() {
     router.push(`/threats/${row.id}`);
   };
 
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    
+    if (value.trim()) {
+      setIsSearching(true);
+      debouncedSearch(value);
+    } else {
+      setIsSearching(false);
+      // 清除搜尋時，重新載入一般查詢
+      setPage(1);
+      loadThreats();
+    }
+  };
+
   const handleSearch = () => {
-    setIsSearching(true);
-    setPage(1);
-    loadThreats();
+    if (searchQuery.trim()) {
+      setIsSearching(true);
+      setPage(1);
+      debouncedSearch(searchQuery);
+    }
   };
 
   const handleClearSearch = () => {
@@ -144,87 +187,155 @@ export default function ThreatsPage() {
 
       {/* 搜尋與篩選區域 */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-4">
+          <h2 className="mb-3 text-lg font-semibold text-gray-900">搜尋與篩選</h2>
+          
           {/* 搜尋框 */}
-          <div className="lg:col-span-2">
+          <div className="mb-4">
             <Input
-              label="搜尋威脅"
+              label="搜尋威脅（即時搜尋）"
               id="search"
               name="search"
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="輸入關鍵字搜尋標題或描述..."
+              onChange={handleSearchInputChange}
+              placeholder="輸入關鍵字搜尋標題或描述（自動搜尋）..."
               onKeyPress={(e) => {
                 if (e.key === "Enter") {
                   handleSearch();
                 }
               }}
             />
+            {isSearching && (
+              <div className="mt-2 flex items-center space-x-2">
+                <span className="text-sm text-gray-600">搜尋模式：{searchQuery}</span>
+                <Button variant="outline" size="sm" onClick={handleClearSearch}>
+                  清除搜尋
+                </Button>
+              </div>
+            )}
           </div>
 
-          {/* 狀態篩選 */}
-          <div>
-            <Select
-              label="狀態"
-              id="status"
-              name="status"
-              value={filters.status || ""}
-              onChange={(e) => handleFilterChange("status", e.target.value || undefined)}
-              options={[
-                { value: "", label: "全部" },
-                { value: "New", label: "新增" },
-                { value: "Analyzing", label: "分析中" },
-                { value: "Processed", label: "已處理" },
-                { value: "Closed", label: "已關閉" },
-              ]}
-            />
-          </div>
+          {/* 篩選條件 */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {/* CVE 編號篩選 */}
+            <div>
+              <Input
+                label="CVE 編號"
+                id="cve_id"
+                name="cve_id"
+                type="text"
+                value={filters.cve_id || ""}
+                onChange={(e) => handleFilterChange("cve_id", e.target.value || undefined)}
+                placeholder="例如：CVE-2024-12345"
+              />
+            </div>
 
-          {/* CVSS 分數篩選 */}
-          <div>
-            <Select
-              label="CVSS 分數"
-              id="cvss_filter"
-              name="cvss_filter"
-              value={
-                filters.min_cvss_score !== undefined
-                  ? `min_${filters.min_cvss_score}`
-                  : filters.max_cvss_score !== undefined
-                    ? `max_${filters.max_cvss_score}`
-                    : ""
-              }
-              onChange={(e) => {
-                const value = e.target.value;
-                if (value.startsWith("min_")) {
-                  handleFilterChange("min_cvss_score", parseFloat(value.replace("min_", "")));
-                  handleFilterChange("max_cvss_score", undefined);
-                } else if (value.startsWith("max_")) {
-                  handleFilterChange("max_cvss_score", parseFloat(value.replace("max_", "")));
-                  handleFilterChange("min_cvss_score", undefined);
-                } else {
-                  handleFilterChange("min_cvss_score", undefined);
-                  handleFilterChange("max_cvss_score", undefined);
+            {/* 產品名稱篩選 */}
+            <div>
+              <Input
+                label="產品名稱"
+                id="product_name"
+                name="product_name"
+                type="text"
+                value={filters.product_name || ""}
+                onChange={(e) => handleFilterChange("product_name", e.target.value || undefined)}
+                placeholder="例如：Windows Server"
+              />
+            </div>
+
+            {/* 狀態篩選 */}
+            <div>
+              <Select
+                label="狀態"
+                id="status"
+                name="status"
+                value={filters.status || ""}
+                onChange={(e) => handleFilterChange("status", e.target.value || undefined)}
+                options={[
+                  { value: "", label: "全部" },
+                  { value: "New", label: "新增" },
+                  { value: "Analyzing", label: "分析中" },
+                  { value: "Processed", label: "已處理" },
+                  { value: "Closed", label: "已關閉" },
+                ]}
+              />
+            </div>
+
+            {/* CVSS 分數篩選 */}
+            <div>
+              <Select
+                label="CVSS 分數"
+                id="cvss_filter"
+                name="cvss_filter"
+                value={
+                  filters.min_cvss_score !== undefined
+                    ? `min_${filters.min_cvss_score}`
+                    : filters.max_cvss_score !== undefined
+                      ? `max_${filters.max_cvss_score}`
+                      : ""
                 }
-              }}
-              options={[
-                { value: "", label: "全部" },
-                { value: "min_7.0", label: "高風險 (≥7.0)" },
-                { value: "min_4.0", label: "中風險 (≥4.0)" },
-                { value: "max_3.9", label: "低風險 (≤3.9)" },
-              ]}
-            />
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value.startsWith("min_")) {
+                    handleFilterChange("min_cvss_score", parseFloat(value.replace("min_", "")));
+                    handleFilterChange("max_cvss_score", undefined);
+                  } else if (value.startsWith("max_")) {
+                    handleFilterChange("max_cvss_score", parseFloat(value.replace("max_", "")));
+                    handleFilterChange("min_cvss_score", undefined);
+                  } else {
+                    handleFilterChange("min_cvss_score", undefined);
+                    handleFilterChange("max_cvss_score", undefined);
+                  }
+                }}
+                options={[
+                  { value: "", label: "全部" },
+                  { value: "min_7.0", label: "高風險 (≥7.0)" },
+                  { value: "min_4.0", label: "中風險 (≥4.0)" },
+                  { value: "max_3.9", label: "低風險 (≤3.9)" },
+                ]}
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="mt-4 flex space-x-2">
-          <Button onClick={handleSearch} isLoading={loading}>
-            搜尋
-          </Button>
+          {/* 篩選結果統計 */}
+          {!isSearching && (
+            <div className="mt-4 flex items-center justify-between rounded-md bg-gray-50 px-4 py-2">
+              <div className="text-sm text-gray-600">
+                找到 <span className="font-semibold text-gray-900">{totalCount}</span> 筆威脅
+                {Object.values(filters).some((v) => v !== undefined) && (
+                  <span className="ml-2 text-gray-500">（已套用篩選條件）</span>
+                )}
+              </div>
+              {Object.values(filters).some((v) => v !== undefined) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFilters({
+                      status: undefined,
+                      cve_id: undefined,
+                      product_name: undefined,
+                      min_cvss_score: undefined,
+                      max_cvss_score: undefined,
+                    });
+                    setPage(1);
+                  }}
+                >
+                  清除所有篩選
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* 搜尋結果統計 */}
           {isSearching && (
-            <Button variant="outline" onClick={handleClearSearch}>
-              清除搜尋
-            </Button>
+            <div className="mt-4 flex items-center justify-between rounded-md bg-blue-50 px-4 py-2">
+              <div className="text-sm text-blue-600">
+                搜尋「<span className="font-semibold text-blue-900">{searchQuery}</span>」找到{" "}
+                <span className="font-semibold text-blue-900">{totalCount}</span> 筆結果
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -304,9 +415,15 @@ export default function ThreatsPage() {
                       {threat.cve_id || "-"}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      <div className="max-w-md truncate" title={threat.title}>
-                        {threat.title}
-                      </div>
+                      <div
+                        className="max-w-md truncate"
+                        title={threat.title}
+                        dangerouslySetInnerHTML={{
+                          __html: isSearching && searchQuery.trim()
+                            ? highlightText(threat.title, searchQuery)
+                            : threat.title,
+                        }}
+                      />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {threat.severity && (
