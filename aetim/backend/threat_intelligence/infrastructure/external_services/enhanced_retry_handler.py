@@ -1,12 +1,13 @@
 """
-重試處理器
+增強的重試處理器
 
-提供指數退避重試機制。
+提供增強的錯誤重試機制，包含 HTTP 429 處理和錯誤分類。
 """
 
 import asyncio
 import httpx
 from typing import Callable, TypeVar, Optional, Dict, Any
+from datetime import datetime, timedelta
 from shared_kernel.infrastructure.logging import get_logger
 from .error_handler import ErrorHandler, ErrorType
 
@@ -15,11 +16,15 @@ logger = get_logger(__name__)
 T = TypeVar("T")
 
 
-class RetryHandler:
+class EnhancedRetryHandler:
     """
-    重試處理器
+    增強的重試處理器
     
-    提供指數退避重試機制，包含 HTTP 429 處理和錯誤分類（AC-008-3）。
+    提供增強的錯誤重試機制，包含：
+    - HTTP 429 速率限制處理
+    - 錯誤分類和記錄
+    - 指數退避重試
+    - 重試次數和時間記錄
     """
     
     def __init__(
@@ -30,7 +35,7 @@ class RetryHandler:
         exponential_base: float = 2.0,
     ):
         """
-        初始化重試處理器
+        初始化增強的重試處理器
         
         Args:
             max_retries: 最大重試次數
@@ -49,7 +54,7 @@ class RetryHandler:
         func: Callable[[], T],
         *,
         retryable_exceptions: tuple = (Exception,),
-        on_retry: Optional[Callable[[int, Exception], None]] = None,
+        on_retry: Optional[Callable[[int, Exception, Dict[str, Any]], None]] = None,
         context: Optional[Dict[str, Any]] = None,
     ) -> T:
         """
@@ -58,7 +63,7 @@ class RetryHandler:
         Args:
             func: 要執行的異步函數
             retryable_exceptions: 可重試的異常類型
-            on_retry: 重試時的回調函數（接收重試次數和異常）
+            on_retry: 重試時的回調函數（接收重試次數、異常和錯誤詳情）
             context: 錯誤上下文資訊
         
         Returns:
@@ -92,7 +97,7 @@ class RetryHandler:
                 error_details = self.error_handler.log_error(e, context=context, error_type=error_type)
                 
                 if attempt < self.max_retries:
-                    # 計算延遲時間（支援 HTTP 429 的 Retry-After header）
+                    # 計算延遲時間
                     delay = self._calculate_delay(attempt, e, error_details)
                     
                     # 記錄重試資訊
@@ -101,6 +106,7 @@ class RetryHandler:
                         "max_retries": self.max_retries,
                         "delay": delay,
                         "error_type": error_type.value,
+                        "retry_at": (datetime.utcnow() + timedelta(seconds=delay)).isoformat(),
                     }
                     retry_history.append(retry_info)
                     
@@ -114,7 +120,7 @@ class RetryHandler:
                     )
                     
                     if on_retry:
-                        on_retry(attempt + 1, e)
+                        on_retry(attempt + 1, e, error_details)
                     
                     await asyncio.sleep(delay)
                 else:

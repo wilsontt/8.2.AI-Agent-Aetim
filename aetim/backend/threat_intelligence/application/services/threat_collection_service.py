@@ -5,7 +5,7 @@
 """
 
 import asyncio
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from ...domain.interfaces.threat_feed_repository import IThreatFeedRepository
@@ -17,6 +17,8 @@ from ...infrastructure.external_services.collector_interface import ICollector
 from ...infrastructure.external_services.ai_service_client import AIServiceClient
 from .threat_extraction_service import ThreatExtractionService
 from ...infrastructure.external_services.retry_handler import RetryHandler
+from ...infrastructure.external_services.error_handler import ErrorHandler, ErrorType
+from .failure_tracker import FailureTracker
 from shared_kernel.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)
@@ -66,6 +68,12 @@ class ThreatCollectionService:
         self.threat_extraction_service = ThreatExtractionService(
             ai_service_client=ai_service_client,
             use_fallback=True,
+        )
+        # 建立錯誤處理器和失敗追蹤器
+        self.error_handler = ErrorHandler()
+        self.failure_tracker = FailureTracker(
+            failure_threshold=3,  # 連續失敗 3 次時發送告警
+            alert_cooldown_hours=24,  # 24 小時內不重複告警
         )
     
     async def collect_from_feed(
@@ -148,11 +156,37 @@ class ThreatCollectionService:
                             "error": str(e),
                         }
                     ),
+                    context={
+                        "feed_id": feed_id,
+                        "feed_name": feed.name,
+                    },
                 )
             except Exception as e:
+                # 分類錯誤並記錄（AC-008-4）
+                error_type = self.error_handler.classify_error(e)
+                error_details = self.error_handler.log_error(
+                    e,
+                    context={
+                        "feed_id": feed_id,
+                        "feed_name": feed.name,
+                    },
+                    error_type=error_type,
+                )
+                
                 error_msg = f"收集威脅失敗：{str(e)}"
-                logger.error(error_msg, extra={"feed_id": feed_id, "feed_name": feed.name, "error": str(e)})
                 errors.append(error_msg)
+                
+                # 記錄失敗（AC-008-4）
+                should_alert = self.failure_tracker.record_failure(
+                    feed_id=feed_id,
+                    feed_name=feed.name,
+                    error_message=error_msg,
+                    error_type=error_type.value,
+                )
+                
+                # 如果達到告警閾值，發送告警
+                if should_alert:
+                    await self._send_failure_alert(feed, error_details)
                 
                 # 更新收集狀態為失敗
                 await self._update_collection_status(
@@ -196,7 +230,10 @@ class ThreatCollectionService:
                     )
                     errors.append(error_msg)
             
-            # 5. 更新收集狀態與時間
+            # 5. 記錄成功（重置失敗計數，AC-008-4）
+            self.failure_tracker.record_success(feed.id)
+            
+            # 6. 更新收集狀態與時間
             await self._update_collection_status(
                 feed,
                 "Success",
@@ -416,6 +453,49 @@ class ThreatCollectionService:
                 }
             )
             # 提取失敗不影響威脅儲存，繼續處理
+    
+    async def _send_failure_alert(
+        self,
+        feed: ThreatFeed,
+        error_details: Dict[str, Any],
+    ) -> None:
+        """
+        發送失敗告警（AC-008-4）
+        
+        Args:
+            feed: 威脅情資來源聚合根
+            error_details: 錯誤詳情
+        """
+        failure_record = self.failure_tracker.get_failure_record(feed.id)
+        if not failure_record:
+            return
+        
+        # 建立告警訊息
+        alert_message = (
+            f"威脅情資來源「{feed.name}」連續失敗 {failure_record.failure_count} 次。\n"
+            f"最後錯誤：{failure_record.last_error_message}\n"
+            f"錯誤類型：{failure_record.last_error_type}\n"
+            f"首次失敗時間：{failure_record.first_failure_time.isoformat() if failure_record.first_failure_time else 'N/A'}\n"
+            f"最後失敗時間：{failure_record.last_failure_time.isoformat() if failure_record.last_failure_time else 'N/A'}"
+        )
+        
+        logger.error(
+            f"威脅收集連續失敗告警：{feed.name}",
+            extra={
+                "feed_id": feed.id,
+                "feed_name": feed.name,
+                "failure_count": failure_record.failure_count,
+                "error_details": error_details,
+                "alert_message": alert_message,
+            }
+        )
+        
+        # TODO: 實作實際的告警機制（Email 或系統通知）
+        # 目前僅記錄日誌，後續可以整合到通知系統
+        # 例如：
+        # - 發送 Email
+        # - 發送系統通知
+        # - 發送到監控系統
     
     async def _update_collection_status(
         self,
