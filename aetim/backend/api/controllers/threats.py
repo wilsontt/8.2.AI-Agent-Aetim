@@ -14,6 +14,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 from typing import Optional
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared_kernel.infrastructure.database import get_db
@@ -31,6 +32,21 @@ from threat_intelligence.infrastructure.persistence.threat_repository import Thr
 from threat_intelligence.infrastructure.persistence.threat_asset_association_repository import (
     ThreatAssetAssociationRepository,
 )
+from analysis_assessment.application.services.threat_asset_association_service import (
+    ThreatAssetAssociationService,
+)
+from analysis_assessment.application.dtos.association_dto import (
+    AssociationAnalysisResponse,
+    ThreatAssociationListResponse,
+    ThreatAssetAssociationResponse,
+    AssociationAnalysisLogResponse,
+)
+from analysis_assessment.domain.domain_services.association_analysis_service import (
+    AssociationAnalysisService,
+)
+from analysis_assessment.domain.domain_services.product_name_matcher import ProductNameMatcher
+from analysis_assessment.domain.domain_services.version_matcher import VersionMatcher
+from asset_management.infrastructure.persistence.asset_repository import AssetRepository
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -49,6 +65,35 @@ def get_threat_service(db: AsyncSession = Depends(get_db)) -> ThreatService:
     threat_repository = ThreatRepository(db)
     association_repository = ThreatAssetAssociationRepository(db)
     return ThreatService(threat_repository, association_repository)
+
+
+def get_threat_asset_association_service(
+    db: AsyncSession = Depends(get_db),
+) -> ThreatAssetAssociationService:
+    """
+    取得威脅-資產關聯服務
+    
+    Args:
+        db: 資料庫 Session
+    
+    Returns:
+        ThreatAssetAssociationService: 威脅-資產關聯服務
+    """
+    threat_repository = ThreatRepository(db)
+    asset_repository = AssetRepository(db)
+    association_repository = ThreatAssetAssociationRepository(db)
+    product_name_matcher = ProductNameMatcher()
+    version_matcher = VersionMatcher()
+    association_analysis_service = AssociationAnalysisService(
+        product_name_matcher=product_name_matcher,
+        version_matcher=version_matcher,
+    )
+    return ThreatAssetAssociationService(
+        threat_repository=threat_repository,
+        asset_repository=asset_repository,
+        association_repository=association_repository,
+        association_analysis_service=association_analysis_service,
+    )
 
 
 @router.get(
@@ -415,4 +460,239 @@ async def update_threat_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"更新威脅狀態失敗：{str(e)}",
+        )
+
+
+@router.post(
+    "/{threat_id}/analyze",
+    response_model=AssociationAnalysisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="執行關聯分析",
+    description="執行威脅與資產的關聯分析，並建立關聯記錄（AC-010-1 至 AC-010-4）",
+    responses={
+        200: {"description": "分析成功"},
+        404: {"description": "威脅不存在"},
+        500: {"description": "分析失敗"},
+    },
+)
+async def analyze_threat_associations(
+    threat_id: str = Path(..., description="威脅 ID"),
+    association_service: ThreatAssetAssociationService = Depends(get_threat_asset_association_service),
+) -> AssociationAnalysisResponse:
+    """
+    執行關聯分析（AC-010-1 至 AC-010-4）
+    
+    - **threat_id**: 威脅 ID
+    
+    此端點會：
+    1. 執行威脅與所有資產的關聯分析
+    2. 建立威脅-資產關聯記錄
+    3. 更新威脅狀態為「已處理」
+    
+    回應包含：
+    - 是否成功
+    - 建立的關聯數量
+    - 錯誤訊息列表（如果有）
+    """
+    try:
+        result = await association_service.analyze_and_create_associations(threat_id)
+        
+        return AssociationAnalysisResponse(
+            success=result["success"],
+            threat_id=result["threat_id"],
+            associations_created=result["associations_created"],
+            errors=result.get("errors", []),
+        )
+        
+    except ValueError as e:
+        # 威脅不存在
+        logger.warning(
+            f"威脅不存在：{threat_id}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"威脅不存在：{threat_id}",
+        )
+    except Exception as e:
+        logger.error(
+            f"執行關聯分析失敗：{str(e)}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"執行關聯分析失敗：{str(e)}",
+        )
+
+
+@router.get(
+    "/{threat_id}/associations",
+    response_model=ThreatAssociationListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查詢威脅的關聯",
+    description="查詢威脅的所有關聯資產（AC-011-1），支援分頁、排序、篩選",
+    responses={
+        200: {"description": "查詢成功"},
+        404: {"description": "威脅不存在"},
+    },
+)
+async def get_threat_associations(
+    threat_id: str = Path(..., description="威脅 ID"),
+    page: int = Query(1, ge=1, description="頁碼"),
+    page_size: int = Query(20, ge=1, le=100, description="每頁筆數"),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="最小信心分數"),
+    match_type: Optional[str] = Query(None, description="匹配類型篩選"),
+    sort_by: Optional[str] = Query("match_confidence", description="排序欄位（match_confidence, created_at）"),
+    sort_order: str = Query("desc", description="排序順序（asc, desc）"),
+    association_service: ThreatAssetAssociationService = Depends(get_threat_asset_association_service),
+) -> ThreatAssociationListResponse:
+    """
+    查詢威脅的關聯（AC-011-1）
+    
+    - **threat_id**: 威脅 ID
+    - **page**: 頁碼（預設 1）
+    - **page_size**: 每頁筆數（預設 20，最大 100）
+    - **min_confidence**: 最小信心分數（可選，0.0-1.0）
+    - **match_type**: 匹配類型篩選（可選）
+    - **sort_by**: 排序欄位（match_confidence, created_at，預設 match_confidence）
+    - **sort_order**: 排序順序（asc 或 desc，預設 desc）
+    
+    回應包含：
+    - 關聯清單
+    - 分頁資訊
+    """
+    try:
+        # 取得所有關聯
+        associations = await association_service.get_associations_by_threat_id(threat_id)
+        
+        # 篩選
+        filtered_associations = associations
+        if min_confidence is not None:
+            filtered_associations = [
+                a for a in filtered_associations
+                if a["match_confidence"] >= min_confidence
+            ]
+        if match_type:
+            filtered_associations = [
+                a for a in filtered_associations
+                if a["match_type"] == match_type
+            ]
+        
+        # 排序
+        reverse = sort_order.lower() == "desc"
+        if sort_by == "match_confidence":
+            filtered_associations.sort(key=lambda x: x["match_confidence"], reverse=reverse)
+        elif sort_by == "created_at":
+            filtered_associations.sort(
+                key=lambda x: x["created_at"] or datetime.min,
+                reverse=reverse
+            )
+        
+        # 分頁
+        total = len(filtered_associations)
+        total_pages = (total + page_size - 1) // page_size
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_associations = filtered_associations[start:end]
+        
+        # 轉換為回應格式
+        association_responses = [
+            ThreatAssetAssociationResponse(
+                id=assoc["id"],
+                threat_id=assoc["threat_id"],
+                asset_id=assoc["asset_id"],
+                match_confidence=assoc["match_confidence"],
+                match_type=assoc["match_type"],
+                match_details=assoc["match_details"],
+                created_at=datetime.fromisoformat(assoc["created_at"]) if assoc["created_at"] else None,
+            )
+            for assoc in paginated_associations
+        ]
+        
+        return ThreatAssociationListResponse(
+            items=association_responses,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"查詢威脅關聯失敗：{str(e)}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"查詢威脅關聯失敗：{str(e)}",
+        )
+
+
+@router.get(
+    "/{threat_id}/associations/analysis-log",
+    response_model=AssociationAnalysisLogResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查詢分析日誌",
+    description="查詢關聯分析的執行日誌（AC-010-5）",
+    responses={
+        200: {"description": "查詢成功"},
+        404: {"description": "威脅不存在"},
+    },
+)
+async def get_association_analysis_log(
+    threat_id: str = Path(..., description="威脅 ID"),
+    db: AsyncSession = Depends(get_db),
+    association_service: ThreatAssetAssociationService = Depends(get_threat_asset_association_service),
+) -> AssociationAnalysisLogResponse:
+    """
+    查詢分析日誌（AC-010-5）
+    
+    - **threat_id**: 威脅 ID
+    
+    回應包含：
+    - 分析開始時間
+    - 分析完成時間
+    - 建立的關聯數量
+    - 錯誤訊息列表
+    - 分析狀態
+    """
+    try:
+        # 取得威脅以判斷狀態
+        threat_service = get_threat_service(db)
+        threat_result = await threat_service.get_threat_by_id(threat_id)
+        
+        if not threat_result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"威脅不存在：{threat_id}",
+            )
+        
+        # 取得關聯
+        associations = await association_service.get_associations_by_threat_id(threat_id)
+        
+        # 判斷分析狀態
+        threat_status = threat_result.status
+        if threat_status == "Processed":
+            analysis_status = "completed"
+        elif threat_status == "Analyzing":
+            analysis_status = "in_progress"
+        else:
+            analysis_status = "not_started"
+        
+        return AssociationAnalysisLogResponse(
+            threat_id=threat_id,
+            associations_created=len(associations),
+            status=analysis_status,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"查詢分析日誌失敗：{str(e)}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"查詢分析日誌失敗：{str(e)}",
         )

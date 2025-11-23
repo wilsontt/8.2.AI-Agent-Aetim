@@ -12,6 +12,7 @@ from fastapi import (
     UploadFile,
     File,
     status,
+    Path,
 )
 from fastapi.responses import JSONResponse
 from typing import Optional
@@ -31,6 +32,23 @@ from asset_management.application.dtos.asset_dto import (
 )
 from asset_management.infrastructure.persistence import AssetRepository
 from asset_management.domain.domain_services.asset_parsing_service import AssetParsingService
+from analysis_assessment.application.services.threat_asset_association_service import (
+    ThreatAssetAssociationService,
+)
+from analysis_assessment.application.dtos.association_dto import (
+    AssetThreatAssociationListResponse,
+    AssetThreatAssociationResponse,
+)
+from analysis_assessment.domain.domain_services.association_analysis_service import (
+    AssociationAnalysisService,
+)
+from analysis_assessment.domain.domain_services.product_name_matcher import ProductNameMatcher
+from analysis_assessment.domain.domain_services.version_matcher import VersionMatcher
+from threat_intelligence.infrastructure.persistence.threat_repository import ThreatRepository
+from threat_intelligence.infrastructure.persistence.threat_asset_association_repository import (
+    ThreatAssetAssociationRepository,
+)
+from datetime import datetime
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -523,4 +541,188 @@ async def preview_import(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "INTERNAL_ERROR", "message": "匯入預覽失敗"},
+        )
+
+
+def get_threat_asset_association_service(
+    db: AsyncSession = Depends(get_db),
+) -> ThreatAssetAssociationService:
+    """
+    取得威脅-資產關聯服務
+    
+    Args:
+        db: 資料庫 Session
+    
+    Returns:
+        ThreatAssetAssociationService: 威脅-資產關聯服務
+    """
+    threat_repository = ThreatRepository(db)
+    asset_repository = AssetRepository(db)
+    association_repository = ThreatAssetAssociationRepository(db)
+    product_name_matcher = ProductNameMatcher()
+    version_matcher = VersionMatcher()
+    association_analysis_service = AssociationAnalysisService(
+        product_name_matcher=product_name_matcher,
+        version_matcher=version_matcher,
+    )
+    return ThreatAssetAssociationService(
+        threat_repository=threat_repository,
+        asset_repository=asset_repository,
+        association_repository=association_repository,
+        association_analysis_service=association_analysis_service,
+    )
+
+
+@router.get(
+    "/{asset_id}/threats",
+    response_model=AssetThreatAssociationListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查詢資產的關聯威脅",
+    description="查詢資產的所有關聯威脅（AC-011-2），支援分頁、排序、篩選",
+    responses={
+        200: {"description": "查詢成功"},
+        404: {"description": "資產不存在"},
+    },
+)
+async def get_asset_threats(
+    asset_id: str = Path(..., description="資產 ID"),
+    page: int = Query(1, ge=1, description="頁碼"),
+    page_size: int = Query(20, ge=1, le=100, description="每頁筆數"),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0, description="最小信心分數"),
+    match_type: Optional[str] = Query(None, description="匹配類型篩選"),
+    threat_severity: Optional[str] = Query(None, description="威脅嚴重程度篩選（Low, Medium, High, Critical）"),
+    threat_status: Optional[str] = Query(None, description="威脅狀態篩選（New, Analyzing, Processed, Closed）"),
+    sort_by: Optional[str] = Query("match_confidence", description="排序欄位（match_confidence, threat_cvss_base_score, created_at）"),
+    sort_order: str = Query("desc", description="排序順序（asc, desc）"),
+    association_service: ThreatAssetAssociationService = Depends(get_threat_asset_association_service),
+) -> AssetThreatAssociationListResponse:
+    """
+    查詢資產的關聯威脅（AC-011-2）
+    
+    - **asset_id**: 資產 ID
+    - **page**: 頁碼（預設 1）
+    - **page_size**: 每頁筆數（預設 20，最大 100）
+    - **min_confidence**: 最小信心分數（可選，0.0-1.0）
+    - **match_type**: 匹配類型篩選（可選）
+    - **threat_severity**: 威脅嚴重程度篩選（可選）
+    - **threat_status**: 威脅狀態篩選（可選）
+    - **sort_by**: 排序欄位（match_confidence, threat_cvss_base_score, created_at，預設 match_confidence）
+    - **sort_order**: 排序順序（asc 或 desc，預設 desc）
+    
+    回應包含：
+    - 關聯威脅清單（包含威脅資訊）
+    - 分頁資訊
+    """
+    try:
+        # 取得所有關聯
+        associations = await association_service.get_associations_by_asset_id(asset_id)
+        
+        # 取得威脅資訊
+        from threat_intelligence.application.services.threat_service import ThreatService
+        from threat_intelligence.infrastructure.persistence.threat_repository import ThreatRepository
+        from threat_intelligence.infrastructure.persistence.threat_asset_association_repository import ThreatAssetAssociationRepository
+        
+        threat_service = ThreatService(
+            ThreatRepository(association_service.threat_repository.session),
+            ThreatAssetAssociationRepository(association_service.association_repository.session),
+        )
+        
+        # 建立包含威脅資訊的關聯列表
+        enriched_associations = []
+        for assoc in associations:
+            try:
+                threat = await threat_service.get_threat_by_id(assoc["threat_id"])
+                if threat:
+                    enriched_associations.append({
+                        **assoc,
+                        "threat_title": threat.title,
+                        "threat_cve_id": threat.cve_id,
+                        "threat_cvss_base_score": threat.cvss_base_score,
+                        "threat_severity": threat.severity.value if threat.severity else None,
+                        "threat_status": threat.status,
+                    })
+            except Exception:
+                # 如果威脅不存在，跳過
+                continue
+        
+        # 篩選
+        filtered_associations = enriched_associations
+        if min_confidence is not None:
+            filtered_associations = [
+                a for a in filtered_associations
+                if a["match_confidence"] >= min_confidence
+            ]
+        if match_type:
+            filtered_associations = [
+                a for a in filtered_associations
+                if a["match_type"] == match_type
+            ]
+        if threat_severity:
+            filtered_associations = [
+                a for a in filtered_associations
+                if a.get("threat_severity") == threat_severity
+            ]
+        if threat_status:
+            filtered_associations = [
+                a for a in filtered_associations
+                if a.get("threat_status") == threat_status
+            ]
+        
+        # 排序
+        reverse = sort_order.lower() == "desc"
+        if sort_by == "match_confidence":
+            filtered_associations.sort(key=lambda x: x["match_confidence"], reverse=reverse)
+        elif sort_by == "threat_cvss_base_score":
+            filtered_associations.sort(
+                key=lambda x: x.get("threat_cvss_base_score") or 0.0,
+                reverse=reverse
+            )
+        elif sort_by == "created_at":
+            filtered_associations.sort(
+                key=lambda x: x["created_at"] or datetime.min,
+                reverse=reverse
+            )
+        
+        # 分頁
+        total = len(filtered_associations)
+        total_pages = (total + page_size - 1) // page_size
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_associations = filtered_associations[start:end]
+        
+        # 轉換為回應格式
+        association_responses = [
+            AssetThreatAssociationResponse(
+                id=assoc["id"],
+                threat_id=assoc["threat_id"],
+                asset_id=assoc["asset_id"],
+                match_confidence=assoc["match_confidence"],
+                match_type=assoc["match_type"],
+                match_details=assoc["match_details"],
+                created_at=datetime.fromisoformat(assoc["created_at"]) if assoc["created_at"] else None,
+                threat_title=assoc.get("threat_title"),
+                threat_cve_id=assoc.get("threat_cve_id"),
+                threat_cvss_base_score=assoc.get("threat_cvss_base_score"),
+                threat_severity=assoc.get("threat_severity"),
+                threat_status=assoc.get("threat_status"),
+            )
+            for assoc in paginated_associations
+        ]
+        
+        return AssetThreatAssociationListResponse(
+            items=association_responses,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"查詢資產關聯威脅失敗：{str(e)}",
+            extra={"asset_id": asset_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"查詢資產關聯威脅失敗：{str(e)}",
         )
