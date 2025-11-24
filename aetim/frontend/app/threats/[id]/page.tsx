@@ -14,12 +14,18 @@ import {
   getThreatAssociations,
   analyzeThreatAssociations,
 } from "@/lib/api/association";
+import {
+  getRiskAssessment,
+  calculateRisk,
+} from "@/lib/api/risk_assessment";
 import { AssociationVisualization } from "@/components/AssociationVisualization";
+import { RiskAssessmentDisplay } from "@/components/RiskAssessmentDisplay";
 import type { ThreatDetailResponse } from "@/types/threat";
 import type {
   ThreatAssociationListResponse,
   ThreatAssociationParams,
 } from "@/types/association";
+import type { RiskAssessmentDetailResponse } from "@/types/risk_assessment";
 
 export default function ThreatDetailPage() {
   const params = useParams();
@@ -41,11 +47,16 @@ export default function ThreatDetailPage() {
     sort_by: "match_confidence",
     sort_order: "desc",
   });
+  const [riskAssessment, setRiskAssessment] = useState<RiskAssessmentDetailResponse | null>(null);
+  const [riskAssessmentLoading, setRiskAssessmentLoading] = useState(false);
+  const [riskAssessmentError, setRiskAssessmentError] = useState<string | null>(null);
+  const [isCalculatingRisk, setIsCalculatingRisk] = useState(false);
 
   useEffect(() => {
     if (threatId) {
       loadThreat();
       loadAssociations();
+      loadRiskAssessment();
     }
   }, [threatId]);
 
@@ -78,6 +89,49 @@ export default function ThreatDetailPage() {
       console.error("載入關聯失敗：", err);
     } finally {
       setAssociationsLoading(false);
+    }
+  };
+
+  const loadRiskAssessment = async () => {
+    try {
+      setRiskAssessmentLoading(true);
+      setRiskAssessmentError(null);
+      const data = await getRiskAssessment(threatId);
+      setRiskAssessment(data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "載入風險評估失敗";
+      // 如果風險評估不存在，不顯示錯誤（這是正常情況）
+      if (errorMessage.includes("不存在")) {
+        setRiskAssessment(null);
+        setRiskAssessmentError(null);
+      } else {
+        setRiskAssessmentError(errorMessage);
+      }
+    } finally {
+      setRiskAssessmentLoading(false);
+    }
+  };
+
+  const handleCalculateRisk = async () => {
+    if (!associations || associations.items.length === 0) {
+      setRiskAssessmentError("請先執行關聯分析，建立威脅與資產的關聯");
+      return;
+    }
+
+    try {
+      setIsCalculatingRisk(true);
+      setRiskAssessmentError(null);
+      // 使用第一個關聯的 ID
+      const firstAssociation = associations.items[0];
+      await calculateRisk(threatId, {
+        threat_asset_association_id: firstAssociation.id,
+      });
+      // 重新載入風險評估
+      await loadRiskAssessment();
+    } catch (err) {
+      setRiskAssessmentError(err instanceof Error ? err.message : "計算風險分數失敗");
+    } finally {
+      setIsCalculatingRisk(false);
     }
   };
 
@@ -637,6 +691,39 @@ export default function ThreatDetailPage() {
             />
           </div>
         )}
+
+        {/* 風險評估區塊 */}
+        <div className="mb-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">風險評估</h2>
+            <Button
+              variant="primary"
+              onClick={handleCalculateRisk}
+              isLoading={isCalculatingRisk}
+              disabled={isCalculatingRisk || !associations || associations.items.length === 0}
+            >
+              {riskAssessment ? "重新計算風險分數" : "計算風險分數"}
+            </Button>
+          </div>
+
+          {riskAssessmentLoading ? (
+            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="text-center text-gray-500">載入風險評估中...</div>
+            </div>
+          ) : riskAssessmentError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-6 shadow-sm">
+              <p className="text-sm text-red-800">{riskAssessmentError}</p>
+            </div>
+          ) : riskAssessment ? (
+            <RiskAssessmentDisplay riskAssessment={riskAssessment} />
+          ) : (
+            <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+              <p className="text-sm text-gray-500">
+                尚未進行風險評估。請先執行關聯分析，然後點擊「計算風險分數」按鈕。
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 更新狀態模態 */}
