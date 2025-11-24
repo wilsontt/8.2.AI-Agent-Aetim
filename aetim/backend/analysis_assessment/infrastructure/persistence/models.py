@@ -167,3 +167,60 @@ class RiskAssessment(Base):
     def __repr__(self):
         return f"<RiskAssessment(id={self.id}, threat_id={self.threat_id}, final_risk_score={self.final_risk_score})>"
 
+
+class RiskAssessmentHistory(Base):
+    """風險評估歷史記錄表"""
+
+    __tablename__ = "risk_assessment_histories"
+
+    # 主鍵
+    id = Column(CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # 外鍵
+    risk_assessment_id = Column(
+        CHAR(36),
+        ForeignKey("risk_assessments.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+        comment="風險評估 ID",
+    )
+
+    # 風險分數計算（歷史記錄）
+    base_cvss_score = Column(Numeric(3, 1), nullable=False, comment="基礎 CVSS 分數")
+    asset_importance_weight = Column(
+        Numeric(3, 2), nullable=False, comment="資產重要性加權（1.5/1.0/0.5）"
+    )
+    asset_count_weight = Column(
+        Numeric(3, 2), nullable=False, comment="資產數量加權"
+    )
+    pir_match_weight = Column(Numeric(3, 2), nullable=True, comment="PIR 符合度加權")
+    cisa_kev_weight = Column(Numeric(3, 2), nullable=True, comment="CISA KEV 加權")
+
+    # 最終結果
+    final_risk_score = Column(Numeric(4, 2), nullable=False, comment="最終風險分數（0.0-10.0）")
+    risk_level = Column(
+        String(20), nullable=False, comment="風險等級（Critical/High/Medium/Low）"
+    )
+
+    # 計算詳情
+    calculation_details = Column(Text, nullable=True, comment="計算詳情（JSON 格式）")
+
+    # 時間戳記
+    calculated_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="計算時間")
+
+    # 關聯（使用字串避免循環匯入）
+    risk_assessment = relationship("RiskAssessment")
+
+    # 索引
+    __table_args__ = (
+        Index("IX_RiskAssessmentHistories_RiskAssessmentId", "risk_assessment_id"),
+        Index("IX_RiskAssessmentHistories_CalculatedAt", "calculated_at"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<RiskAssessmentHistory(id={self.id}, "
+            f"risk_assessment_id={self.risk_assessment_id}, "
+            f"final_risk_score={self.final_risk_score}, "
+            f"calculated_at={self.calculated_at})>"
+        )
+
