@@ -41,15 +41,95 @@ from analysis_assessment.application.dtos.association_dto import (
     ThreatAssetAssociationResponse,
     AssociationAnalysisLogResponse,
 )
+from analysis_assessment.application.dtos.risk_assessment_dto import (
+    RiskCalculationResponse,
+    RiskAssessmentDetailResponse,
+    RiskAssessmentHistoryListResponse,
+    RiskAssessmentHistoryResponse,
+)
+from analysis_assessment.application.services.risk_assessment_service import (
+    RiskAssessmentService,
+)
 from analysis_assessment.domain.domain_services.association_analysis_service import (
     AssociationAnalysisService,
 )
+from analysis_assessment.domain.domain_services.risk_calculation_service import (
+    RiskCalculationService,
+)
+from analysis_assessment.domain.domain_services.cvss_score_calculator import (
+    CVSSScoreCalculator,
+)
+from analysis_assessment.domain.domain_services.weight_factor_calculator import (
+    WeightFactorCalculator,
+)
+from analysis_assessment.domain.domain_services.risk_level_classifier import (
+    RiskLevelClassifier,
+)
 from analysis_assessment.domain.domain_services.product_name_matcher import ProductNameMatcher
 from analysis_assessment.domain.domain_services.version_matcher import VersionMatcher
+from analysis_assessment.domain.interfaces.risk_assessment_repository import (
+    IRiskAssessmentRepository,
+)
+from analysis_assessment.domain.interfaces.risk_assessment_history_repository import (
+    IRiskAssessmentHistoryRepository,
+)
+from analysis_assessment.domain.interfaces.pir_repository import IPIRRepository
+from analysis_assessment.infrastructure.persistence.risk_assessment_repository import (
+    RiskAssessmentRepository,
+)
+from analysis_assessment.infrastructure.persistence.risk_assessment_history_repository import (
+    RiskAssessmentHistoryRepository,
+)
+from analysis_assessment.infrastructure.persistence.pir_repository import PIRRepository
+from threat_intelligence.infrastructure.persistence.threat_feed_repository import (
+    ThreatFeedRepository,
+)
 from asset_management.infrastructure.persistence.asset_repository import AssetRepository
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+def get_risk_assessment_service(
+    db: AsyncSession = Depends(get_db),
+) -> RiskAssessmentService:
+    """
+    取得風險評估服務
+    
+    Args:
+        db: 資料庫 Session
+    
+    Returns:
+        RiskAssessmentService: 風險評估服務
+    """
+    threat_repository = ThreatRepository(db)
+    threat_feed_repository = ThreatFeedRepository(db)
+    asset_repository = AssetRepository(db)
+    pir_repository = PIRRepository(db)
+    risk_assessment_repository = RiskAssessmentRepository(db)
+    history_repository = RiskAssessmentHistoryRepository(db)
+    association_repository = ThreatAssetAssociationRepository(db)
+    
+    # 建立風險計算服務
+    cvss_calculator = CVSSScoreCalculator()
+    weight_calculator = WeightFactorCalculator()
+    risk_classifier = RiskLevelClassifier()
+    risk_calculation_service = RiskCalculationService(
+        cvss_calculator=cvss_calculator,
+        weight_calculator=weight_calculator,
+        risk_classifier=risk_classifier,
+    )
+    
+    return RiskAssessmentService(
+        risk_calculation_service=risk_calculation_service,
+        threat_repository=threat_repository,
+        threat_feed_repository=threat_feed_repository,
+        asset_repository=asset_repository,
+        pir_repository=pir_repository,
+        risk_assessment_repository=risk_assessment_repository,
+        history_repository=history_repository,
+        association_repository=association_repository,
+    )
 
 
 def get_threat_service(db: AsyncSession = Depends(get_db)) -> ThreatService:
@@ -695,4 +775,269 @@ async def get_association_analysis_log(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"查詢分析日誌失敗：{str(e)}",
+        )
+
+
+@router.post(
+    "/{threat_id}/calculate-risk",
+    response_model=RiskCalculationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="計算風險分數",
+    description="計算威脅的風險分數（AC-012-1 至 AC-012-5）",
+    responses={
+        200: {"description": "計算成功"},
+        404: {"description": "威脅不存在"},
+        500: {"description": "計算失敗"},
+    },
+)
+async def calculate_risk(
+    threat_id: str = Path(..., description="威脅 ID"),
+    risk_service: RiskAssessmentService = Depends(get_risk_assessment_service),
+    db: AsyncSession = Depends(get_db),
+) -> RiskCalculationResponse:
+    """
+    計算風險分數（AC-012-1 至 AC-012-5）
+    
+    - **threat_id**: 威脅 ID
+    
+    此端點會：
+    1. 計算威脅的風險分數（考慮所有加權因子）
+    2. 儲存風險評估
+    3. 儲存歷史記錄
+    
+    回應包含：
+    - 是否成功
+    - 風險評估 ID
+    - 最終風險分數
+    - 風險等級
+    - 計算時間
+    """
+    try:
+        # 取得威脅以驗證存在
+        threat_service = get_threat_service(db)
+        threat = await threat_service.get_threat_by_id(threat_id)
+        if not threat:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"威脅不存在：{threat_id}",
+            )
+        
+        # 取得威脅的第一個關聯（用於建立風險評估）
+        association_service = get_threat_asset_association_service(db)
+        associations = await association_service.get_associations_by_threat_id(threat_id)
+        
+        # 使用第一個關聯的 ID，如果沒有關聯則使用臨時 ID
+        # 注意：如果沒有關聯，風險評估仍然可以計算（只是沒有資產加權）
+        threat_asset_association_id = (
+            associations[0]["id"] if associations and len(associations) > 0 else f"temp-{threat_id}"
+        )
+        
+        # 計算並儲存風險評估
+        risk_assessment = await risk_service.calculate_and_save_risk(
+            threat_id=threat_id,
+            threat_asset_association_id=threat_asset_association_id,
+        )
+        
+        return RiskCalculationResponse(
+            success=True,
+            threat_id=threat_id,
+            risk_assessment_id=risk_assessment.id,
+            final_risk_score=risk_assessment.final_risk_score,
+            risk_level=risk_assessment.risk_level,
+            calculated_at=risk_assessment.created_at,
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        error_msg = str(e)
+        logger.warning(
+            f"計算風險分數失敗：{error_msg}",
+            extra={"threat_id": threat_id, "error": error_msg}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_msg,
+        )
+    except Exception as e:
+        logger.error(
+            f"計算風險分數失敗：{str(e)}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"計算風險分數失敗：{str(e)}",
+        )
+
+
+@router.get(
+    "/{threat_id}/risk-assessment",
+    response_model=RiskAssessmentDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查詢風險評估",
+    description="查詢威脅的風險評估詳情（AC-013-1, AC-013-2）",
+    responses={
+        200: {"description": "查詢成功"},
+        404: {"description": "威脅不存在或沒有風險評估"},
+        500: {"description": "查詢失敗"},
+    },
+)
+async def get_risk_assessment(
+    threat_id: str = Path(..., description="威脅 ID"),
+    risk_service: RiskAssessmentService = Depends(get_risk_assessment_service),
+) -> RiskAssessmentDetailResponse:
+    """
+    查詢風險評估詳情（AC-013-1, AC-013-2）
+    
+    - **threat_id**: 威脅 ID
+    
+    回應包含：
+    - 基礎 CVSS 分數
+    - 各加權因子的貢獻（資產重要性、受影響數量、PIR 符合度、CISA KEV）
+    - 最終風險分數
+    - 風險等級
+    - 計算公式說明
+    """
+    try:
+        risk_assessment = await risk_service.get_risk_assessment_by_threat_id(threat_id)
+        
+        if not risk_assessment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"威脅 {threat_id} 沒有風險評估記錄",
+            )
+        
+        # 解析計算公式
+        calculation_formula = None
+        if risk_assessment.calculation_details:
+            calculation_formula = risk_assessment.calculation_details.get(
+                "calculation_formula"
+            )
+        
+        return RiskAssessmentDetailResponse(
+            id=risk_assessment.id,
+            threat_id=risk_assessment.threat_id,
+            threat_asset_association_id=risk_assessment.threat_asset_association_id,
+            base_cvss_score=risk_assessment.base_cvss_score,
+            asset_importance_weight=risk_assessment.asset_importance_weight,
+            affected_asset_count=risk_assessment.affected_asset_count,
+            asset_count_weight=risk_assessment.asset_count_weight,
+            pir_match_weight=risk_assessment.pir_match_weight,
+            cisa_kev_weight=risk_assessment.cisa_kev_weight,
+            final_risk_score=risk_assessment.final_risk_score,
+            risk_level=risk_assessment.risk_level,
+            calculation_details=risk_assessment.calculation_details,
+            calculation_formula=calculation_formula,
+            created_at=risk_assessment.created_at,
+            updated_at=risk_assessment.updated_at,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"查詢風險評估失敗：{str(e)}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"查詢風險評估失敗：{str(e)}",
+        )
+
+
+@router.get(
+    "/{threat_id}/risk-assessment/history",
+    response_model=RiskAssessmentHistoryListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="查詢風險評估歷史",
+    description="查詢威脅的風險評估歷史記錄（AC-013-3）",
+    responses={
+        200: {"description": "查詢成功"},
+        404: {"description": "威脅不存在或沒有風險評估"},
+        500: {"description": "查詢失敗"},
+    },
+)
+async def get_risk_assessment_history(
+    threat_id: str = Path(..., description="威脅 ID"),
+    start_time: Optional[datetime] = Query(
+        None, description="開始時間（ISO 8601 格式）"
+    ),
+    end_time: Optional[datetime] = Query(
+        None, description="結束時間（ISO 8601 格式）"
+    ),
+    risk_service: RiskAssessmentService = Depends(get_risk_assessment_service),
+) -> RiskAssessmentHistoryListResponse:
+    """
+    查詢風險評估歷史記錄（AC-013-3）
+    
+    - **threat_id**: 威脅 ID
+    - **start_time**: 開始時間（可選，ISO 8601 格式）
+    - **end_time**: 結束時間（可選，ISO 8601 格式）
+    
+    回應包含：
+    - 歷史記錄清單
+    - 總數
+    """
+    try:
+        # 先取得風險評估
+        risk_assessment = await risk_service.get_risk_assessment_by_threat_id(threat_id)
+        
+        if not risk_assessment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"威脅 {threat_id} 沒有風險評估記錄",
+            )
+        
+        # 查詢歷史記錄
+        histories = await risk_service.get_risk_assessment_history(
+            risk_assessment_id=risk_assessment.id,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        
+        # 轉換為回應格式
+        history_responses = []
+        for history in histories:
+            calculation_details = None
+            if history.get("calculation_details"):
+                try:
+                    import json
+                    calculation_details = json.loads(history["calculation_details"])
+                except (json.JSONDecodeError, TypeError):
+                    calculation_details = None
+            
+            history_responses.append(
+                RiskAssessmentHistoryResponse(
+                    id=history["id"],
+                    risk_assessment_id=history["risk_assessment_id"],
+                    base_cvss_score=history["base_cvss_score"],
+                    asset_importance_weight=history["asset_importance_weight"],
+                    asset_count_weight=history["asset_count_weight"],
+                    pir_match_weight=history.get("pir_match_weight"),
+                    cisa_kev_weight=history.get("cisa_kev_weight"),
+                    final_risk_score=history["final_risk_score"],
+                    risk_level=history["risk_level"],
+                    calculation_details=calculation_details,
+                    calculated_at=datetime.fromisoformat(history["calculated_at"])
+                    if history.get("calculated_at")
+                    else datetime.utcnow(),
+                )
+            )
+        
+        return RiskAssessmentHistoryListResponse(
+            items=history_responses,
+            total=len(history_responses),
+            threat_id=threat_id,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"查詢風險評估歷史失敗：{str(e)}",
+            extra={"threat_id": threat_id, "error": str(e)}
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"查詢風險評估歷史失敗：{str(e)}",
         )

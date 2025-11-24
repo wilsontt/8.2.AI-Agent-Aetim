@@ -12,8 +12,10 @@ from ...domain.domain_services.risk_calculation_service import RiskCalculationSe
 from ...domain.interfaces.risk_assessment_history_repository import (
     IRiskAssessmentHistoryRepository,
 )
+from ...domain.interfaces.risk_assessment_repository import IRiskAssessmentRepository
 from threat_intelligence.domain.aggregates.threat import Threat
 from threat_intelligence.domain.interfaces.threat_repository import IThreatRepository
+from threat_intelligence.domain.interfaces.threat_feed_repository import IThreatFeedRepository
 from threat_intelligence.infrastructure.persistence.threat_asset_association_repository import (
     ThreatAssetAssociationRepository,
 )
@@ -40,8 +42,10 @@ class RiskAssessmentService:
         self,
         risk_calculation_service: RiskCalculationService,
         threat_repository: IThreatRepository,
+        threat_feed_repository: IThreatFeedRepository,
         asset_repository: IAssetRepository,
         pir_repository: IPIRRepository,
+        risk_assessment_repository: IRiskAssessmentRepository,
         history_repository: IRiskAssessmentHistoryRepository,
         association_repository: ThreatAssetAssociationRepository,
     ):
@@ -51,15 +55,19 @@ class RiskAssessmentService:
         Args:
             risk_calculation_service: 風險計算服務
             threat_repository: 威脅 Repository
+            threat_feed_repository: 威脅來源 Repository
             asset_repository: 資產 Repository
             pir_repository: PIR Repository
+            risk_assessment_repository: 風險評估 Repository
             history_repository: 歷史記錄 Repository
             association_repository: 威脅-資產關聯 Repository
         """
         self.risk_calculation_service = risk_calculation_service
         self.threat_repository = threat_repository
+        self.threat_feed_repository = threat_feed_repository
         self.asset_repository = asset_repository
         self.pir_repository = pir_repository
+        self.risk_assessment_repository = risk_assessment_repository
         self.history_repository = history_repository
         self.association_repository = association_repository
 
@@ -67,7 +75,6 @@ class RiskAssessmentService:
         self,
         threat_id: str,
         threat_asset_association_id: str,
-        threat_feed_name: Optional[str] = None,
     ) -> RiskAssessment:
         """
         計算並儲存風險評估（包含歷史記錄）
@@ -75,7 +82,6 @@ class RiskAssessmentService:
         Args:
             threat_id: 威脅 ID
             threat_asset_association_id: 威脅資產關聯 ID
-            threat_feed_name: 威脅來源名稱（可選）
         
         Returns:
             RiskAssessment: 風險評估聚合根
@@ -85,15 +91,20 @@ class RiskAssessmentService:
         if not threat:
             raise ValueError(f"威脅不存在：{threat_id}")
 
-        # 2. 取得受影響的資產
-        # 這裡需要從 threat_asset_association 取得資產清單
-        # 暫時使用簡化邏輯，實際應從關聯表查詢
+        # 2. 取得威脅來源名稱
+        threat_feed_name = None
+        if threat.threat_feed_id:
+            threat_feed = await self.threat_feed_repository.get_by_id(threat.threat_feed_id)
+            if threat_feed:
+                threat_feed_name = threat_feed.name
+
+        # 3. 取得受影響的資產
         associated_assets = await self._get_associated_assets(threat_id)
 
-        # 3. 取得啟用的 PIRs
+        # 4. 取得啟用的 PIRs
         pirs = await self.pir_repository.get_all_enabled()
 
-        # 4. 計算風險評估
+        # 5. 計算風險評估
         risk_assessment = self.risk_calculation_service.calculate_risk(
             threat=threat,
             associated_assets=associated_assets,
@@ -102,7 +113,10 @@ class RiskAssessmentService:
             threat_feed_name=threat_feed_name,
         )
 
-        # 5. 儲存歷史記錄（AC-012-5）
+        # 6. 儲存風險評估
+        await self.risk_assessment_repository.save(risk_assessment)
+
+        # 7. 儲存歷史記錄（AC-012-5）
         await self.history_repository.save_history(risk_assessment)
 
         logger.info(
@@ -113,6 +127,21 @@ class RiskAssessmentService:
         )
 
         return risk_assessment
+
+    async def get_risk_assessment_by_threat_id(
+        self,
+        threat_id: str,
+    ) -> Optional[RiskAssessment]:
+        """
+        查詢威脅的風險評估
+        
+        Args:
+            threat_id: 威脅 ID
+        
+        Returns:
+            Optional[RiskAssessment]: 風險評估聚合根，如果不存在則返回 None
+        """
+        return await self.risk_assessment_repository.get_by_threat_id(threat_id)
 
     async def get_risk_assessment_history(
         self,
