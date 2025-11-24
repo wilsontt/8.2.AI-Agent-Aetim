@@ -23,6 +23,7 @@ import { AssociationVisualization } from "@/components/AssociationVisualization"
 import { RiskAssessmentDisplay } from "@/components/RiskAssessmentDisplay";
 import { RiskAssessmentDetail } from "@/components/RiskAssessmentDetail";
 import { RiskAssessmentHistory } from "@/components/RiskAssessmentHistory";
+import { RiskTrendAnalysis } from "@/components/RiskTrendAnalysis";
 import type { ThreatDetailResponse } from "@/types/threat";
 import type {
   ThreatAssociationListResponse,
@@ -770,10 +771,16 @@ export default function ThreatDetailPage() {
                       <div className="text-center text-gray-500">載入歷史記錄中...</div>
                     </div>
                   ) : riskHistory && riskHistory.items.length > 0 ? (
-                    <RiskAssessmentHistory
-                      histories={riskHistory.items}
-                      threatId={threatId}
-                    />
+                    <>
+                      <RiskAssessmentHistory
+                        histories={riskHistory.items}
+                        threatId={threatId}
+                      />
+                      {/* 風險趨勢分析 */}
+                      <div className="mt-6">
+                        <RiskTrendAnalysis histories={riskHistory.items} />
+                      </div>
+                    </>
                   ) : (
                     <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
                       <p className="text-sm text-gray-500">目前沒有歷史記錄</p>
