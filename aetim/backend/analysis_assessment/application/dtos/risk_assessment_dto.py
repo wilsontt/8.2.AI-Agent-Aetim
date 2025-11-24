@@ -61,6 +61,7 @@ class RiskAssessmentHistoryResponse(BaseModel):
     
     # 加權因子
     asset_importance_weight: float = Field(..., description="資產重要性加權")
+    affected_asset_count: int = Field(..., ge=0, description="受影響資產數量")
     asset_count_weight: float = Field(..., description="資產數量加權")
     pir_match_weight: Optional[float] = Field(None, description="PIR 符合度加權")
     cisa_kev_weight: Optional[float] = Field(None, description="CISA KEV 加權")

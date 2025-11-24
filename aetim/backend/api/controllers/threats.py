@@ -1006,12 +1006,18 @@ async def get_risk_assessment_history(
                 except (json.JSONDecodeError, TypeError):
                     calculation_details = None
             
+            # 從 calculation_details 中提取 affected_asset_count
+            affected_asset_count = 0
+            if calculation_details and "affected_asset_count" in calculation_details:
+                affected_asset_count = calculation_details["affected_asset_count"]
+            
             history_responses.append(
                 RiskAssessmentHistoryResponse(
                     id=history["id"],
                     risk_assessment_id=history["risk_assessment_id"],
                     base_cvss_score=history["base_cvss_score"],
                     asset_importance_weight=history["asset_importance_weight"],
+                    affected_asset_count=affected_asset_count,
                     asset_count_weight=history["asset_count_weight"],
                     pir_match_weight=history.get("pir_match_weight"),
                     cisa_kev_weight=history.get("cisa_kev_weight"),

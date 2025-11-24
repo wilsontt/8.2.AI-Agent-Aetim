@@ -17,15 +17,21 @@ import {
 import {
   getRiskAssessment,
   calculateRisk,
+  getRiskAssessmentHistory,
 } from "@/lib/api/risk_assessment";
 import { AssociationVisualization } from "@/components/AssociationVisualization";
 import { RiskAssessmentDisplay } from "@/components/RiskAssessmentDisplay";
+import { RiskAssessmentDetail } from "@/components/RiskAssessmentDetail";
+import { RiskAssessmentHistory } from "@/components/RiskAssessmentHistory";
 import type { ThreatDetailResponse } from "@/types/threat";
 import type {
   ThreatAssociationListResponse,
   ThreatAssociationParams,
 } from "@/types/association";
-import type { RiskAssessmentDetailResponse } from "@/types/risk_assessment";
+import type {
+  RiskAssessmentDetailResponse,
+  RiskAssessmentHistoryListResponse,
+} from "@/types/risk_assessment";
 
 export default function ThreatDetailPage() {
   const params = useParams();
@@ -51,6 +57,9 @@ export default function ThreatDetailPage() {
   const [riskAssessmentLoading, setRiskAssessmentLoading] = useState(false);
   const [riskAssessmentError, setRiskAssessmentError] = useState<string | null>(null);
   const [isCalculatingRisk, setIsCalculatingRisk] = useState(false);
+  const [riskHistory, setRiskHistory] = useState<RiskAssessmentHistoryListResponse | null>(null);
+  const [riskHistoryLoading, setRiskHistoryLoading] = useState(false);
+  const [showRiskDetail, setShowRiskDetail] = useState(false);
 
   useEffect(() => {
     if (threatId) {
@@ -59,6 +68,13 @@ export default function ThreatDetailPage() {
       loadRiskAssessment();
     }
   }, [threatId]);
+
+  useEffect(() => {
+    // 當顯示詳情時，載入歷史記錄
+    if (showRiskDetail && riskAssessment) {
+      loadRiskHistory();
+    }
+  }, [showRiskDetail, riskAssessment]);
 
   useEffect(() => {
     if (threatId) {
@@ -112,6 +128,20 @@ export default function ThreatDetailPage() {
     }
   };
 
+  const loadRiskHistory = async () => {
+    if (!riskAssessment) return;
+
+    try {
+      setRiskHistoryLoading(true);
+      const data = await getRiskAssessmentHistory(threatId);
+      setRiskHistory(data);
+    } catch (err) {
+      console.error("載入風險評估歷史失敗：", err);
+    } finally {
+      setRiskHistoryLoading(false);
+    }
+  };
+
   const handleCalculateRisk = async () => {
     if (!associations || associations.items.length === 0) {
       setRiskAssessmentError("請先執行關聯分析，建立威脅與資產的關聯");
@@ -126,7 +156,7 @@ export default function ThreatDetailPage() {
       await calculateRisk(threatId, {
         threat_asset_association_id: firstAssociation.id,
       });
-      // 重新載入風險評估
+      // 重新載入風險評估（會自動載入歷史記錄）
       await loadRiskAssessment();
     } catch (err) {
       setRiskAssessmentError(err instanceof Error ? err.message : "計算風險分數失敗");
@@ -696,14 +726,24 @@ export default function ThreatDetailPage() {
         <div className="mb-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-900">風險評估</h2>
-            <Button
-              variant="primary"
-              onClick={handleCalculateRisk}
-              isLoading={isCalculatingRisk}
-              disabled={isCalculatingRisk || !associations || associations.items.length === 0}
-            >
-              {riskAssessment ? "重新計算風險分數" : "計算風險分數"}
-            </Button>
+            <div className="flex space-x-2">
+              {riskAssessment && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowRiskDetail(!showRiskDetail)}
+                >
+                  {showRiskDetail ? "隱藏詳情" : "查看詳情"}
+                </Button>
+              )}
+              <Button
+                variant="primary"
+                onClick={handleCalculateRisk}
+                isLoading={isCalculatingRisk}
+                disabled={isCalculatingRisk || !associations || associations.items.length === 0}
+              >
+                {riskAssessment ? "重新計算風險分數" : "計算風險分數"}
+              </Button>
+            </div>
           </div>
 
           {riskAssessmentLoading ? (
@@ -715,7 +755,33 @@ export default function ThreatDetailPage() {
               <p className="text-sm text-red-800">{riskAssessmentError}</p>
             </div>
           ) : riskAssessment ? (
-            <RiskAssessmentDisplay riskAssessment={riskAssessment} />
+            <>
+              {showRiskDetail ? (
+                <RiskAssessmentDetail riskAssessment={riskAssessment} />
+              ) : (
+                <RiskAssessmentDisplay riskAssessment={riskAssessment} />
+              )}
+
+              {/* 風險分數歷史記錄 */}
+              {showRiskDetail && (
+                <div className="mt-6">
+                  {riskHistoryLoading ? (
+                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+                      <div className="text-center text-gray-500">載入歷史記錄中...</div>
+                    </div>
+                  ) : riskHistory && riskHistory.items.length > 0 ? (
+                    <RiskAssessmentHistory
+                      histories={riskHistory.items}
+                      threatId={threatId}
+                    />
+                  ) : (
+                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+                      <p className="text-sm text-gray-500">目前沒有歷史記錄</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           ) : (
             <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">
