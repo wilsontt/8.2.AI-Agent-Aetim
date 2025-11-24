@@ -8,6 +8,9 @@ from .domain_services.association_analysis_service import AssociationAnalysisSer
 from .domain_services.product_name_matcher import ProductNameMatcher
 from .domain_services.version_matcher import VersionMatcher
 from .domain_services.risk_calculation_service import RiskCalculationService
+from .domain_services.cvss_score_calculator import CVSSScoreCalculator
+from .domain_services.weight_factor_calculator import WeightFactorCalculator
+from .domain_services.risk_level_classifier import RiskLevelClassifier
 
 __all__ = [
     "PIR",
@@ -16,5 +19,8 @@ __all__ = [
     "ProductNameMatcher",
     "VersionMatcher",
     "RiskCalculationService",
+    "CVSSScoreCalculator",
+    "WeightFactorCalculator",
+    "RiskLevelClassifier",
 ]
 

@@ -205,20 +205,18 @@ class RiskAssessment:
         """
         根據最終風險分數決定風險等級（AC-012-4）
         
+        此方法與 RiskLevelClassifier 保持一致。
+        
         Args:
             final_risk_score: 最終風險分數
         
         Returns:
             str: 風險等級（Critical, High, Medium, Low）
         """
-        if final_risk_score >= 8.0:
-            return "Critical"
-        elif final_risk_score >= 6.0:
-            return "High"
-        elif final_risk_score >= 4.0:
-            return "Medium"
-        else:
-            return "Low"
+        from ..domain_services.risk_level_classifier import RiskLevelClassifier
+        
+        classifier = RiskLevelClassifier()
+        return classifier.classify(final_risk_score)
     
     def __repr__(self):
         return (
