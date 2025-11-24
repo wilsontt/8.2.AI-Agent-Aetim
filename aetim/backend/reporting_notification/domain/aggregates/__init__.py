@@ -3,6 +3,7 @@
 """
 
 from .report import Report
+from .report_schedule import ReportSchedule
 
-__all__ = ["Report"]
+__all__ = ["Report", "ReportSchedule"]
 

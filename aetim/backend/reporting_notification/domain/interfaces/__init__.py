@@ -3,6 +3,7 @@
 """
 
 from .report_repository import IReportRepository
+from .report_schedule_repository import IReportScheduleRepository
 
-__all__ = ["IReportRepository"]
+__all__ = ["IReportRepository", "IReportScheduleRepository"]
 

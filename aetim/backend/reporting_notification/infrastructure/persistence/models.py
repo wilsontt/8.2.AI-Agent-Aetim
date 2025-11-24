@@ -154,3 +154,40 @@ class Notification(Base):
     def __repr__(self):
         return f"<Notification(id={self.id}, notification_type={self.notification_type}, status={self.status})>"
 
+
+class ReportSchedule(Base):
+    """報告排程表"""
+
+    __tablename__ = "report_schedules"
+
+    # 主鍵
+    id = Column(CHAR(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+
+    # 排程設定
+    report_type = Column(
+        String(50), nullable=False, comment="報告類型（CISO_Weekly/IT_Ticket）"
+    )
+    cron_expression = Column(String(100), nullable=False, comment="Cron 表達式")
+    is_enabled = Column(Boolean, nullable=False, default=True, comment="是否啟用")
+    recipients = Column(Text, nullable=False, comment="收件人清單（JSON 格式）")
+    file_format = Column(
+        String(20), nullable=False, default="HTML", comment="檔案格式（HTML/PDF）"
+    )
+
+    # 執行時間
+    last_run_at = Column(DateTime, nullable=True, comment="最後執行時間")
+    next_run_at = Column(DateTime, nullable=True, comment="下次執行時間")
+
+    # 時間戳記
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 索引
+    __table_args__ = (
+        Index("IX_ReportSchedules_ReportType", "report_type"),
+        Index("IX_ReportSchedules_IsEnabled", "is_enabled"),
+    )
+
+    def __repr__(self):
+        return f"<ReportSchedule(id={self.id}, report_type={self.report_type}, cron_expression={self.cron_expression})>"
+
