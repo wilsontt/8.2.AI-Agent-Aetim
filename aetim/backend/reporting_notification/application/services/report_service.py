@@ -7,6 +7,7 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import structlog
+from pathlib import Path
 
 from ...domain.aggregates.report import Report
 from ...domain.value_objects.report_type import ReportType
@@ -17,6 +18,7 @@ from ...domain.domain_services.report_generation_service import (
 )
 from ...domain.interfaces.report_repository import IReportRepository
 from ...infrastructure.external_services.ai_summary_service import AISummaryService
+from ...infrastructure.services.template_renderer import TemplateRenderer
 from threat_intelligence.domain.interfaces.threat_repository import IThreatRepository
 from analysis_assessment.domain.interfaces.risk_assessment_repository import (
     IRiskAssessmentRepository,
@@ -46,6 +48,7 @@ class ReportService:
         ai_summary_service: AISummaryService,
         threat_asset_association_repository: ThreatAssetAssociationRepository,
         asset_repository: IAssetRepository,
+        template_renderer: Optional[TemplateRenderer] = None,
     ):
         """
         初始化報告服務
@@ -56,12 +59,17 @@ class ReportService:
             ai_summary_service: AI 摘要服務
             threat_asset_association_repository: 威脅資產關聯 Repository
             asset_repository: 資產 Repository
+            template_renderer: 模板渲染服務（可選）
         """
         self.report_generation_service = report_generation_service
         self.report_repository = report_repository
         self.ai_summary_service = ai_summary_service
         self.threat_asset_association_repository = threat_asset_association_repository
         self.asset_repository = asset_repository
+        
+        # 如果提供了模板渲染服務，注入到報告生成服務
+        if template_renderer is not None:
+            self.report_generation_service.template_renderer = template_renderer
     
     async def generate_ciso_weekly_report(
         self,

@@ -23,6 +23,15 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# 注意：TemplateRenderer 是 Infrastructure Layer 的服務
+# 這裡使用 TYPE_CHECKING 避免循環導入
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from reporting_notification.infrastructure.services.template_renderer import (
+        TemplateRenderer,
+    )
+
 
 @dataclass
 class WeeklyReportData:
@@ -51,6 +60,7 @@ class ReportGenerationService:
         threat_repository: IThreatRepository,
         risk_assessment_repository: IRiskAssessmentRepository,
         asset_repository: IAssetRepository,
+        template_renderer: Optional[Any] = None,  # TemplateRenderer，使用 Any 避免循環導入
     ):
         """
         初始化報告生成服務
@@ -59,10 +69,12 @@ class ReportGenerationService:
             threat_repository: 威脅 Repository
             risk_assessment_repository: 風險評估 Repository
             asset_repository: 資產 Repository
+            template_renderer: 模板渲染服務（可選，預設為 None）
         """
         self.threat_repository = threat_repository
         self.risk_assessment_repository = risk_assessment_repository
         self.asset_repository = asset_repository
+        self.template_renderer = template_renderer
     
     async def generate_ciso_weekly_report(
         self,
@@ -355,15 +367,61 @@ class ReportGenerationService:
         Returns:
             bytes: 報告內容（位元組）
         """
-        # 基本 HTML 模板（詳細模板將在 T-4-1-3 實作）
+        # 使用模板渲染服務（如果可用）
+        if self.template_renderer is not None:
+            return self._generate_with_template(report_data, file_format)
+        
+        # 回退到基本 HTML 生成（向後相容）
         if file_format == FileFormat.HTML:
             html_content = self._generate_html_content(report_data)
             return html_content.encode("utf-8")
         elif file_format == FileFormat.PDF:
-            # PDF 生成將在 T-4-1-3 實作
-            # 暫時返回 HTML 內容
+            # PDF 生成需要模板渲染服務
+            logger.warning(
+                "PDF 生成需要模板渲染服務，但未提供。回退到 HTML。",
+            )
             html_content = self._generate_html_content(report_data)
             return html_content.encode("utf-8")
+        else:
+            raise ValueError(f"不支援的檔案格式: {file_format}")
+    
+    def _generate_with_template(
+        self, report_data: WeeklyReportData, file_format: FileFormat
+    ) -> bytes:
+        """
+        使用模板渲染服務生成報告內容
+        
+        Args:
+            report_data: 週報資料
+            file_format: 檔案格式
+        
+        Returns:
+            bytes: 報告內容（位元組）
+        """
+        # 準備模板上下文
+        context = {
+            "report_title": f"CISO 週報 - {report_data.period_end.strftime('%Y年%m月%d日')}",
+            "period_start": report_data.period_start,
+            "period_end": report_data.period_end,
+            "total_threats": report_data.total_threats,
+            "critical_threats": report_data.critical_threats,
+            "critical_threat_list": report_data.critical_threat_list,
+            "affected_assets_by_type": report_data.affected_assets_by_type,
+            "affected_assets_by_importance": report_data.affected_assets_by_importance,
+            "risk_trend": report_data.risk_trend,
+            "business_risk_description": report_data.business_risk_description,
+            "generated_at": datetime.utcnow(),
+        }
+        
+        # 根據檔案格式選擇模板和渲染方法
+        template_name = "ciso_weekly_report.html"
+        
+        if file_format == FileFormat.HTML:
+            html_content = self.template_renderer.render_html(template_name, context)
+            return html_content.encode("utf-8")
+        elif file_format == FileFormat.PDF:
+            pdf_content = self.template_renderer.render_pdf(template_name, context)
+            return pdf_content
         else:
             raise ValueError(f"不支援的檔案格式: {file_format}")
     
