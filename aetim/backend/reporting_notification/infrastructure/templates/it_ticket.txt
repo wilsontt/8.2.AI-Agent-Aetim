@@ -1,0 +1,54 @@
+================================================================================
+IT 工單 - {{ ticket_data.cve_id or ticket_data.title }}
+================================================================================
+
+【CVE 編號與詳細描述】
+CVE 編號：{{ ticket_data.cve_id or "N/A" }}
+標題：{{ ticket_data.title }}
+描述：{{ ticket_data.description or "無描述" }}
+來源連結：{{ ticket_data.source_url or "N/A" }}
+{% if ticket_data.published_date %}
+發布日期：{{ ticket_data.published_date }}
+{% endif %}
+
+【CVSS 分數與風險分數】
+CVSS 基礎分數：{{ ticket_data.cvss_base_score|round(2) }}
+最終風險分數：{{ ticket_data.final_risk_score|round(2) }}
+風險等級：{{ ticket_data.risk_level }}
+
+【受影響的資產清單】
+{% if ticket_data.affected_assets %}
+共 {{ ticket_data.affected_assets|length }} 個受影響資產：
+
+{% for asset in ticket_data.affected_assets %}
+{{ loop.index }}. 主機名稱：{{ asset.host_name }}
+   IP 位址：{{ asset.ip_address }}
+   負責人：{{ asset.owner }}
+   作業系統：{{ asset.operating_system }}
+   產品資訊：
+{% for product in asset.products %}
+     - {{ product.product_name }} {{ product.version or "N/A" }}
+{% endfor %}
+   匹配信心：{{ (asset.match_confidence * 100)|round(2) }}%
+   匹配類型：{{ asset.match_type }}
+{% if not loop.last %}
+
+{% endif %}
+{% endfor %}
+{% else %}
+無受影響的資產
+{% endif %}
+
+【修補建議】
+修補程式連結：{{ ticket_data.remediation.patch_url or "請參考 CVE 官方資訊" }}
+暫時緩解措施：{{ ticket_data.remediation.temporary_mitigation }}
+
+【優先處理順序】
+風險分數：{{ ticket_data.final_risk_score|round(2) }}（{{ ticket_data.risk_level }}）
+建議優先處理順序：{{ ticket_data.priority.priority_level }}
+
+================================================================================
+工單狀態：{{ ticket_data.ticket_status }}
+生成時間：{{ ticket_data.generated_at }}
+================================================================================
+

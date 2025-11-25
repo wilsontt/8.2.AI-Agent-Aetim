@@ -160,4 +160,43 @@ class TemplateRenderer:
                 exc_info=True,
             )
             raise
+    
+    def render_text(
+        self,
+        template_name: str,
+        context: Dict[str, Any],
+    ) -> str:
+        """
+        渲染 TEXT 模板
+        
+        Args:
+            template_name: 模板檔案名稱（例如：it_ticket.txt）
+            context: 模板上下文變數
+        
+        Returns:
+            str: 渲染後的 TEXT 內容
+        
+        Raises:
+            FileNotFoundError: 當模板檔案不存在時
+            TemplateError: 當模板渲染失敗時
+        """
+        try:
+            template = self.env.get_template(template_name)
+            text_content = template.render(**context)
+            
+            logger.debug(
+                "TEXT 模板渲染成功",
+                template_name=template_name,
+            )
+            
+            return text_content
+            
+        except Exception as e:
+            logger.error(
+                "TEXT 模板渲染失敗",
+                template_name=template_name,
+                error=str(e),
+                exc_info=True,
+            )
+            raise
 

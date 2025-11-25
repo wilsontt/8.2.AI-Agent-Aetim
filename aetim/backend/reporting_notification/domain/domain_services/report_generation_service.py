@@ -760,6 +760,81 @@ class ReportGenerationService:
         """
         生成 TEXT 格式工單內容（AC-017-2, AC-017-3）
         
+        使用 Jinja2 模板引擎生成 TEXT 格式工單內容。
+        
+        Args:
+            threat: 威脅聚合根
+            risk_assessment: 風險評估聚合根
+            affected_assets: 受影響的資產清單
+        
+        Returns:
+            str: TEXT 格式的工單內容
+        """
+        # 如果提供了模板渲染服務，使用模板引擎
+        if self.template_renderer:
+            try:
+                # 準備模板上下文
+                ticket_data = {
+                    "cve_id": threat.cve_id,
+                    "title": threat.title,
+                    "description": threat.description,
+                    "source_url": threat.source_url,
+                    "published_date": threat.published_date.strftime('%Y-%m-%d') if threat.published_date else None,
+                    "cvss_base_score": risk_assessment.base_cvss_score,
+                    "final_risk_score": risk_assessment.final_risk_score,
+                    "risk_level": risk_assessment.risk_level,
+                    "affected_assets": affected_assets,
+                    "remediation": {
+                        "patch_url": threat.source_url,
+                        "temporary_mitigation": "請參考 CVE 官方資訊或廠商安全通報",
+                    },
+                    "priority": {
+                        "risk_score": risk_assessment.final_risk_score,
+                        "risk_level": risk_assessment.risk_level,
+                        "priority_level": (
+                            "高" if risk_assessment.final_risk_score >= 8.0
+                            else "中" if risk_assessment.final_risk_score >= 6.0
+                            else "低"
+                        ),
+                    },
+                    "ticket_status": TicketStatus.PENDING.value,
+                    "generated_at": datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
+                }
+                
+                return self.template_renderer.render_text(
+                    template_name="it_ticket.txt",
+                    context={"ticket_data": ticket_data},
+                )
+            except Exception as e:
+                logger.warning(
+                    "使用模板引擎生成 TEXT 格式失敗，使用回退方法",
+                    error=str(e),
+                )
+                # 回退到原始方法
+                return self._generate_ticket_text_fallback(
+                    threat=threat,
+                    risk_assessment=risk_assessment,
+                    affected_assets=affected_assets,
+                )
+        else:
+            # 如果沒有模板渲染服務，使用回退方法
+            return self._generate_ticket_text_fallback(
+                threat=threat,
+                risk_assessment=risk_assessment,
+                affected_assets=affected_assets,
+            )
+    
+    def _generate_ticket_text_fallback(
+        self,
+        threat: Threat,
+        risk_assessment: RiskAssessment,
+        affected_assets: List[Dict[str, Any]],
+    ) -> str:
+        """
+        生成 TEXT 格式工單內容（回退方法）
+        
+        當模板引擎不可用時使用此方法。
+        
         Args:
             threat: 威脅聚合根
             risk_assessment: 風險評估聚合根

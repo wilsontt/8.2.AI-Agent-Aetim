@@ -1,0 +1,186 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IT Ticket Schema",
+  "description": "IT 工單 JSON Schema 定義（AC-017-2, AC-017-3）",
+  "type": "object",
+  "required": [
+    "ticket_title",
+    "cve_info",
+    "risk_scores",
+    "affected_assets",
+    "remediation",
+    "priority",
+    "ticket_status",
+    "generated_at"
+  ],
+  "properties": {
+    "ticket_title": {
+      "type": "string",
+      "description": "工單標題"
+    },
+    "cve_info": {
+      "type": "object",
+      "required": ["cve_id", "title"],
+      "properties": {
+        "cve_id": {
+          "type": ["string", "null"],
+          "description": "CVE 編號"
+        },
+        "title": {
+          "type": "string",
+          "description": "威脅標題"
+        },
+        "description": {
+          "type": ["string", "null"],
+          "description": "威脅描述"
+        },
+        "source_url": {
+          "type": ["string", "null"],
+          "description": "來源連結"
+        },
+        "published_date": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "發布日期（ISO 8601 格式）"
+        }
+      }
+    },
+    "risk_scores": {
+      "type": "object",
+      "required": ["cvss_base_score", "final_risk_score", "risk_level"],
+      "properties": {
+        "cvss_base_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 10.0,
+          "description": "CVSS 基礎分數"
+        },
+        "final_risk_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 10.0,
+          "description": "最終風險分數"
+        },
+        "risk_level": {
+          "type": "string",
+          "enum": ["Critical", "High", "Medium", "Low"],
+          "description": "風險等級"
+        }
+      }
+    },
+    "affected_assets": {
+      "type": "array",
+      "description": "受影響的資產清單",
+      "items": {
+        "type": "object",
+        "required": [
+          "asset_id",
+          "host_name",
+          "ip_address",
+          "owner",
+          "products",
+          "operating_system",
+          "match_confidence",
+          "match_type"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "資產 ID"
+          },
+          "host_name": {
+            "type": "string",
+            "description": "主機名稱"
+          },
+          "ip_address": {
+            "type": "string",
+            "description": "IP 位址"
+          },
+          "owner": {
+            "type": "string",
+            "description": "負責人"
+          },
+          "products": {
+            "type": "array",
+            "description": "產品清單",
+            "items": {
+              "type": "object",
+              "required": ["product_name"],
+              "properties": {
+                "product_name": {
+                  "type": "string",
+                  "description": "產品名稱"
+                },
+                "version": {
+                  "type": ["string", "null"],
+                  "description": "產品版本"
+                }
+              }
+            }
+          },
+          "operating_system": {
+            "type": "string",
+            "description": "作業系統"
+          },
+          "match_confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "匹配信心分數"
+          },
+          "match_type": {
+            "type": "string",
+            "description": "匹配類型"
+          }
+        }
+      }
+    },
+    "remediation": {
+      "type": "object",
+      "required": ["patch_url", "temporary_mitigation"],
+      "properties": {
+        "patch_url": {
+          "type": ["string", "null"],
+          "description": "修補程式連結"
+        },
+        "temporary_mitigation": {
+          "type": "string",
+          "description": "暫時緩解措施"
+        }
+      }
+    },
+    "priority": {
+      "type": "object",
+      "required": ["risk_score", "risk_level", "priority_level"],
+      "properties": {
+        "risk_score": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 10.0,
+          "description": "風險分數"
+        },
+        "risk_level": {
+          "type": "string",
+          "enum": ["Critical", "High", "Medium", "Low"],
+          "description": "風險等級"
+        },
+        "priority_level": {
+          "type": "string",
+          "enum": ["高", "中", "低"],
+          "description": "優先處理順序"
+        }
+      }
+    },
+    "ticket_status": {
+      "type": "string",
+      "enum": ["待處理", "處理中", "已完成", "已關閉"],
+      "description": "工單狀態（AC-017-5）"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "生成時間（ISO 8601 格式）"
+    }
+  }
+}
+
