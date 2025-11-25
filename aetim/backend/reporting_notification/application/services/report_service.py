@@ -28,6 +28,10 @@ from threat_intelligence.infrastructure.persistence.threat_asset_association_rep
     ThreatAssetAssociationRepository,
 )
 from asset_management.domain.aggregates.asset import Asset
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from system_management.application.services.audit_log_service import AuditLogService
 
 logger = structlog.get_logger(__name__)
 
@@ -49,6 +53,7 @@ class ReportService:
         threat_asset_association_repository: ThreatAssetAssociationRepository,
         asset_repository: IAssetRepository,
         template_renderer: Optional[TemplateRenderer] = None,
+        audit_log_service: Optional[Any] = None,  # AuditLogService，使用 Any 避免循環導入
     ):
         """
         初始化報告服務
@@ -60,12 +65,14 @@ class ReportService:
             threat_asset_association_repository: 威脅資產關聯 Repository
             asset_repository: 資產 Repository
             template_renderer: 模板渲染服務（可選）
+            audit_log_service: 稽核日誌服務（可選）
         """
         self.report_generation_service = report_generation_service
         self.report_repository = report_repository
         self.ai_summary_service = ai_summary_service
         self.threat_asset_association_repository = threat_asset_association_repository
         self.asset_repository = asset_repository
+        self.audit_log_service = audit_log_service
         
         # 如果提供了模板渲染服務，注入到報告生成服務
         if template_renderer is not None:
@@ -330,4 +337,236 @@ class ReportService:
                     )
         
         return assets_by_type, assets_by_importance
+    
+    async def export_ticket(
+        self,
+        ticket_id: str,
+        file_format: Optional[FileFormat] = None,
+        user_id: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        匯出單一工單（AC-017-4）
+        
+        Args:
+            ticket_id: 工單 ID（報告 ID）
+            file_format: 檔案格式（可選，如果不提供則使用報告的原始格式）
+            user_id: 使用者 ID（用於稽核日誌）
+            ip_address: IP 位址（用於稽核日誌）
+            user_agent: User Agent（用於稽核日誌）
+        
+        Returns:
+            Dict[str, Any]: 包含 file_content（檔案內容）、file_name（檔案名稱）、content_type（內容類型）
+        
+        Raises:
+            ValueError: 當工單不存在或不是 IT_Ticket 類型時
+        """
+        # 取得工單記錄
+        report = await self.report_repository.get_by_id(ticket_id)
+        if not report:
+            raise ValueError(f"找不到工單：{ticket_id}")
+        
+        # 檢查是否為 IT_Ticket 類型
+        if report.report_type != ReportType.IT_TICKET:
+            raise ValueError(f"報告 {ticket_id} 不是 IT 工單類型")
+        
+        # 決定檔案格式
+        export_format = file_format if file_format else report.file_format
+        
+        # 取得檔案內容
+        file_content = await self.report_repository.get_file_content(ticket_id)
+        if not file_content:
+            raise ValueError(f"找不到工單檔案：{ticket_id}")
+        
+        # 如果請求的格式與原始格式不同，需要重新生成
+        if file_format and file_format != report.file_format:
+            # 這裡需要重新生成工單內容（簡化處理，暫時返回原始內容）
+            # TODO: 實作格式轉換功能
+            logger.warning(
+                "請求的格式與原始格式不同，返回原始格式",
+                ticket_id=ticket_id,
+                requested_format=file_format.value,
+                original_format=report.file_format.value,
+            )
+        
+        # 決定檔案名稱和內容類型
+        file_extension = export_format.get_file_extension()
+        file_name = f"IT_Ticket_{ticket_id}{file_extension}"
+        
+        content_type_map = {
+            FileFormat.TEXT: "text/plain; charset=utf-8",
+            FileFormat.JSON: "application/json; charset=utf-8",
+            FileFormat.HTML: "text/html; charset=utf-8",
+            FileFormat.PDF: "application/pdf",
+        }
+        content_type = content_type_map.get(export_format, "application/octet-stream")
+        
+        # 記錄稽核日誌（AC-018-3）
+        if self.audit_log_service:
+            try:
+                await self.audit_log_service.log_action(
+                    user_id=user_id,
+                    action="EXPORT",
+                    resource_type="IT_Ticket",
+                    resource_id=ticket_id,
+                    details={
+                        "file_format": export_format.value,
+                        "file_name": file_name,
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+            except Exception as e:
+                logger.warning(
+                    "記錄稽核日誌失敗",
+                    ticket_id=ticket_id,
+                    error=str(e),
+                )
+        
+        logger.info(
+            "工單匯出完成",
+            ticket_id=ticket_id,
+            file_format=export_format.value,
+            file_name=file_name,
+        )
+        
+        return {
+            "file_content": file_content,
+            "file_name": file_name,
+            "content_type": content_type,
+        }
+    
+    async def export_tickets_batch(
+        self,
+        ticket_ids: List[str],
+        user_id: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        批次匯出工單（AC-018-1, AC-018-2）
+        
+        Args:
+            ticket_ids: 工單 ID 清單
+            user_id: 使用者 ID（用於稽核日誌）
+            ip_address: IP 位址（用於稽核日誌）
+            user_agent: User Agent（用於稽核日誌）
+        
+        Returns:
+            Dict[str, Any]: 包含 file_content（檔案內容）、file_name（檔案名稱）、content_type（內容類型）
+        
+        Raises:
+            ValueError: 當工單 ID 清單為空時
+        """
+        if not ticket_ids:
+            raise ValueError("工單 ID 清單不能為空")
+        
+        logger.info(
+            "開始批次匯出工單",
+            ticket_count=len(ticket_ids),
+        )
+        
+        # 取得所有工單
+        tickets_data = []
+        for ticket_id in ticket_ids:
+            report = await self.report_repository.get_by_id(ticket_id)
+            if not report:
+                logger.warning(
+                    "找不到工單，跳過",
+                    ticket_id=ticket_id,
+                )
+                continue
+            
+            # 檢查是否為 IT_Ticket 類型
+            if report.report_type != ReportType.IT_TICKET:
+                logger.warning(
+                    "報告不是 IT 工單類型，跳過",
+                    ticket_id=ticket_id,
+                    report_type=report.report_type.value,
+                )
+                continue
+            
+            # 取得檔案內容
+            file_content = await self.report_repository.get_file_content(ticket_id)
+            if not file_content:
+                logger.warning(
+                    "找不到工單檔案，跳過",
+                    ticket_id=ticket_id,
+                )
+                continue
+            
+            # 解析 JSON 內容（如果是 JSON 格式）
+            if report.file_format == FileFormat.JSON:
+                try:
+                    import json
+                    ticket_json = json.loads(file_content.decode('utf-8'))
+                    tickets_data.append(ticket_json)
+                except Exception as e:
+                    logger.warning(
+                        "無法解析工單 JSON，跳過",
+                        ticket_id=ticket_id,
+                        error=str(e),
+                    )
+                    continue
+            else:
+                # 對於非 JSON 格式，轉換為 JSON 結構
+                tickets_data.append({
+                    "ticket_id": ticket_id,
+                    "title": report.title,
+                    "file_format": report.file_format.value,
+                    "content": file_content.decode('utf-8'),
+                    "generated_at": report.generated_at.isoformat(),
+                })
+        
+        if not tickets_data:
+            raise ValueError("沒有可匯出的工單")
+        
+        # 生成批次匯出 JSON（AC-018-2）
+        batch_export_data = {
+            "export_type": "batch_tickets",
+            "exported_at": datetime.utcnow().isoformat(),
+            "ticket_count": len(tickets_data),
+            "tickets": tickets_data,
+        }
+        
+        import json
+        file_content = json.dumps(batch_export_data, ensure_ascii=False, indent=2).encode('utf-8')
+        file_name = f"IT_Tickets_Batch_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        content_type = "application/json; charset=utf-8"
+        
+        # 記錄稽核日誌（AC-018-3）
+        if self.audit_log_service:
+            try:
+                await self.audit_log_service.log_action(
+                    user_id=user_id,
+                    action="EXPORT",
+                    resource_type="IT_Ticket",
+                    resource_id=None,  # 批次匯出沒有單一資源 ID
+                    details={
+                        "ticket_count": len(tickets_data),
+                        "ticket_ids": ticket_ids,
+                        "file_name": file_name,
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+            except Exception as e:
+                logger.warning(
+                    "記錄稽核日誌失敗",
+                    ticket_count=len(tickets_data),
+                    error=str(e),
+                )
+        
+        logger.info(
+            "批次工單匯出完成",
+            ticket_count=len(tickets_data),
+            file_name=file_name,
+        )
+        
+        return {
+            "file_content": file_content,
+            "file_name": file_name,
+            "content_type": content_type,
+        }
 
