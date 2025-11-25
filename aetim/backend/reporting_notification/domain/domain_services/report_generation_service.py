@@ -13,13 +13,18 @@ from ..value_objects.report_type import ReportType
 from ..value_objects.file_format import FileFormat
 from threat_intelligence.domain.aggregates.threat import Threat
 from threat_intelligence.domain.interfaces.threat_repository import IThreatRepository
+from threat_intelligence.infrastructure.persistence.threat_asset_association_repository import (
+    ThreatAssetAssociationRepository,
+)
 from analysis_assessment.domain.aggregates.risk_assessment import RiskAssessment
 from analysis_assessment.domain.interfaces.risk_assessment_repository import (
     IRiskAssessmentRepository,
 )
 from asset_management.domain.aggregates.asset import Asset
 from asset_management.domain.interfaces.asset_repository import IAssetRepository
+from ..value_objects.ticket_status import TicketStatus
 import structlog
+import json
 
 logger = structlog.get_logger(__name__)
 
@@ -60,6 +65,7 @@ class ReportGenerationService:
         threat_repository: IThreatRepository,
         risk_assessment_repository: IRiskAssessmentRepository,
         asset_repository: IAssetRepository,
+        threat_asset_association_repository: Optional[ThreatAssetAssociationRepository] = None,
         template_renderer: Optional[Any] = None,  # TemplateRenderer，使用 Any 避免循環導入
     ):
         """
@@ -69,11 +75,13 @@ class ReportGenerationService:
             threat_repository: 威脅 Repository
             risk_assessment_repository: 風險評估 Repository
             asset_repository: 資產 Repository
+            threat_asset_association_repository: 威脅資產關聯 Repository（可選）
             template_renderer: 模板渲染服務（可選，預設為 None）
         """
         self.threat_repository = threat_repository
         self.risk_assessment_repository = risk_assessment_repository
         self.asset_repository = asset_repository
+        self.threat_asset_association_repository = threat_asset_association_repository
         self.template_renderer = template_renderer
     
     async def generate_ciso_weekly_report(
@@ -576,4 +584,289 @@ class ReportGenerationService:
 """
         
         return html
+    
+    async def generate_it_ticket(
+        self,
+        risk_assessment: RiskAssessment,
+        file_format: FileFormat = FileFormat.TEXT,
+    ) -> Report:
+        """
+        生成 IT 工單（AC-017-1）
+        
+        Args:
+            risk_assessment: 風險評估聚合根
+            file_format: 檔案格式（TEXT 或 JSON，AC-017-3）
+        
+        Returns:
+            Report: 生成的工單報告聚合根
+        
+        Raises:
+            ValueError: 當風險分數 < 6.0 時
+        """
+        # 檢查風險分數是否 >= 6.0（AC-017-1）
+        if risk_assessment.final_risk_score < 6.0:
+            raise ValueError(
+                f"風險分數 {risk_assessment.final_risk_score} 低於 6.0，不符合工單生成條件"
+            )
+        
+        logger.info(
+            "開始生成 IT 工單",
+            risk_assessment_id=risk_assessment.id,
+            threat_id=risk_assessment.threat_id,
+            risk_score=risk_assessment.final_risk_score,
+        )
+        
+        # 取得威脅資訊
+        threat = await self.threat_repository.get_by_id(risk_assessment.threat_id)
+        if not threat:
+            raise ValueError(f"找不到威脅：{risk_assessment.threat_id}")
+        
+        # 取得受影響的資產清單（AC-017-2）
+        affected_assets = await self._get_affected_assets_for_ticket(
+            risk_assessment.threat_id
+        )
+        
+        # 生成工單內容
+        ticket_content = await self._generate_ticket_content(
+            threat=threat,
+            risk_assessment=risk_assessment,
+            affected_assets=affected_assets,
+            file_format=file_format,
+        )
+        
+        # 建立工單標題
+        ticket_title = f"IT 工單 - {threat.cve_id or threat.title}"
+        
+        # 建立工單檔案路徑（暫時為空，將由 Repository 設定）
+        file_path = ""
+        
+        # 建立 Report 聚合根（report_type="IT_Ticket"）
+        report = Report.create(
+            report_type=ReportType.IT_TICKET,
+            title=ticket_title,
+            file_path=file_path,
+            file_format=file_format,
+            summary=f"風險分數：{risk_assessment.final_risk_score:.2f}，風險等級：{risk_assessment.risk_level}",
+            metadata={
+                "risk_assessment_id": risk_assessment.id,
+                "threat_id": threat.id,
+                "cve_id": threat.cve_id,
+                "risk_score": risk_assessment.final_risk_score,
+                "risk_level": risk_assessment.risk_level,
+                "affected_asset_count": len(affected_assets),
+                "ticket_status": TicketStatus.PENDING.value,  # AC-017-5：設定工單狀態為「待處理」
+            },
+        )
+        
+        logger.info(
+            "IT 工單生成完成",
+            report_id=report.id,
+            threat_id=threat.id,
+            risk_score=risk_assessment.final_risk_score,
+        )
+        
+        return report
+    
+    async def _get_affected_assets_for_ticket(
+        self, threat_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        取得受影響的資產清單（AC-017-2）
+        
+        Args:
+            threat_id: 威脅 ID
+        
+        Returns:
+            List[Dict[str, Any]]: 受影響的資產清單，包含產品名稱、版本、IP 位址、負責人
+        """
+        if not self.threat_asset_association_repository:
+            logger.warning(
+                "ThreatAssetAssociationRepository 未設定，無法取得受影響資產",
+                threat_id=threat_id,
+            )
+            return []
+        
+        # 取得威脅資產關聯
+        associations = await self.threat_asset_association_repository.get_by_threat_id(
+            threat_id
+        )
+        
+        affected_assets = []
+        for association in associations:
+            # 取得資產資訊
+            asset = await self.asset_repository.get_by_id(association.asset_id)
+            if not asset:
+                continue
+            
+            # 提取產品資訊
+            products_info = []
+            for product in asset.products:
+                products_info.append({
+                    "product_name": product.product_name,
+                    "version": product.version,
+                })
+            
+            affected_assets.append({
+                "asset_id": asset.id,
+                "host_name": asset.host_name,
+                "ip_address": asset.ip or "N/A",
+                "owner": asset.owner,
+                "products": products_info,
+                "operating_system": asset.operating_system,
+                "match_confidence": association.match_confidence,
+                "match_type": association.match_type,
+            })
+        
+        return affected_assets
+    
+    async def _generate_ticket_content(
+        self,
+        threat: Threat,
+        risk_assessment: RiskAssessment,
+        affected_assets: List[Dict[str, Any]],
+        file_format: FileFormat,
+    ) -> str:
+        """
+        生成工單內容（AC-017-2, AC-017-3）
+        
+        Args:
+            threat: 威脅聚合根
+            risk_assessment: 風險評估聚合根
+            affected_assets: 受影響的資產清單
+            file_format: 檔案格式（TEXT 或 JSON）
+        
+        Returns:
+            str: 工單內容（TEXT 或 JSON 字串）
+        """
+        if file_format == FileFormat.JSON:
+            return self._generate_ticket_json(
+                threat=threat,
+                risk_assessment=risk_assessment,
+                affected_assets=affected_assets,
+            )
+        else:  # TEXT
+            return self._generate_ticket_text(
+                threat=threat,
+                risk_assessment=risk_assessment,
+                affected_assets=affected_assets,
+            )
+    
+    def _generate_ticket_text(
+        self,
+        threat: Threat,
+        risk_assessment: RiskAssessment,
+        affected_assets: List[Dict[str, Any]],
+    ) -> str:
+        """
+        生成 TEXT 格式工單內容（AC-017-2, AC-017-3）
+        
+        Args:
+            threat: 威脅聚合根
+            risk_assessment: 風險評估聚合根
+            affected_assets: 受影響的資產清單
+        
+        Returns:
+            str: TEXT 格式的工單內容
+        """
+        text = f"""
+================================================================================
+IT 工單 - {threat.cve_id or threat.title}
+================================================================================
+
+【CVE 編號與詳細描述】
+CVE 編號：{threat.cve_id or "N/A"}
+標題：{threat.title}
+描述：{threat.description or "無描述"}
+
+【CVSS 分數與風險分數】
+CVSS 基礎分數：{risk_assessment.base_cvss_score:.2f}
+最終風險分數：{risk_assessment.final_risk_score:.2f}
+風險等級：{risk_assessment.risk_level}
+
+【受影響的資產清單】
+"""
+        
+        if not affected_assets:
+            text += "無受影響的資產\n"
+        else:
+            text += f"共 {len(affected_assets)} 個受影響資產：\n\n"
+            for idx, asset in enumerate(affected_assets, 1):
+                text += f"{idx}. 主機名稱：{asset['host_name']}\n"
+                text += f"   IP 位址：{asset['ip_address']}\n"
+                text += f"   負責人：{asset['owner']}\n"
+                text += f"   作業系統：{asset['operating_system']}\n"
+                text += f"   產品資訊：\n"
+                for product in asset['products']:
+                    text += f"     - {product['product_name']} {product.get('version', 'N/A')}\n"
+                text += f"   匹配信心：{asset['match_confidence']:.2%}\n"
+                text += f"   匹配類型：{asset['match_type']}\n"
+                text += "\n"
+        
+        text += f"""
+【修補建議】
+修補程式連結：{threat.source_url or "請參考 CVE 官方資訊"}
+暫時緩解措施：請參考 CVE 官方資訊或廠商安全通報
+
+【優先處理順序】
+風險分數：{risk_assessment.final_risk_score:.2f}（{risk_assessment.risk_level}）
+建議優先處理順序：{'高' if risk_assessment.final_risk_score >= 8.0 else '中' if risk_assessment.final_risk_score >= 6.0 else '低'}
+
+================================================================================
+工單狀態：待處理
+生成時間：{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}
+================================================================================
+"""
+        
+        return text
+    
+    def _generate_ticket_json(
+        self,
+        threat: Threat,
+        risk_assessment: RiskAssessment,
+        affected_assets: List[Dict[str, Any]],
+    ) -> str:
+        """
+        生成 JSON 格式工單內容（AC-017-2, AC-017-3）
+        
+        Args:
+            threat: 威脅聚合根
+            risk_assessment: 風險評估聚合根
+            affected_assets: 受影響的資產清單
+        
+        Returns:
+            str: JSON 格式的工單內容
+        """
+        ticket_data = {
+            "ticket_title": f"IT 工單 - {threat.cve_id or threat.title}",
+            "cve_info": {
+                "cve_id": threat.cve_id,
+                "title": threat.title,
+                "description": threat.description,
+                "source_url": threat.source_url,
+                "published_date": threat.published_date.isoformat() if threat.published_date else None,
+            },
+            "risk_scores": {
+                "cvss_base_score": risk_assessment.base_cvss_score,
+                "final_risk_score": risk_assessment.final_risk_score,
+                "risk_level": risk_assessment.risk_level,
+            },
+            "affected_assets": affected_assets,
+            "remediation": {
+                "patch_url": threat.source_url,
+                "temporary_mitigation": "請參考 CVE 官方資訊或廠商安全通報",
+            },
+            "priority": {
+                "risk_score": risk_assessment.final_risk_score,
+                "risk_level": risk_assessment.risk_level,
+                "priority_level": (
+                    "高" if risk_assessment.final_risk_score >= 8.0
+                    else "中" if risk_assessment.final_risk_score >= 6.0
+                    else "低"
+                ),
+            },
+            "ticket_status": TicketStatus.PENDING.value,
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+        
+        return json.dumps(ticket_data, ensure_ascii=False, indent=2)
 

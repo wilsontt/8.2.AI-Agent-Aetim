@@ -70,6 +70,11 @@ class ReportService:
         # 如果提供了模板渲染服務，注入到報告生成服務
         if template_renderer is not None:
             self.report_generation_service.template_renderer = template_renderer
+        
+        # 注入威脅資產關聯 Repository 到報告生成服務
+        self.report_generation_service.threat_asset_association_repository = (
+            threat_asset_association_repository
+        )
     
     async def generate_ciso_weekly_report(
         self,
@@ -143,10 +148,72 @@ class ReportService:
         # 5. 儲存報告（包含檔案）
         await self.report_repository.save(report, report_content)
         
+            logger.info(
+                "CISO 週報生成完成",
+                report_id=report.id,
+                file_path=report.file_path,
+            )
+            
+            return report
+    
+    async def generate_it_ticket(
+        self,
+        risk_assessment_id: str,
+        file_format: FileFormat = FileFormat.TEXT,
+    ) -> Report:
+        """
+        生成 IT 工單（AC-017-1）
+        
+        Args:
+            risk_assessment_id: 風險評估 ID
+            file_format: 檔案格式（TEXT 或 JSON，AC-017-3）
+        
+        Returns:
+            Report: 生成的工單報告聚合根
+        """
+        from analysis_assessment.domain.interfaces.risk_assessment_repository import (
+            IRiskAssessmentRepository,
+        )
+        
+        # 取得風險評估
+        risk_assessment = await self.report_generation_service.risk_assessment_repository.get_by_id(
+            risk_assessment_id
+        )
+        if not risk_assessment:
+            raise ValueError(f"找不到風險評估：{risk_assessment_id}")
+        
+        # 檢查風險分數是否 >= 6.0（AC-017-1）
+        if risk_assessment.final_risk_score < 6.0:
+            raise ValueError(
+                f"風險分數 {risk_assessment.final_risk_score} 低於 6.0，不符合工單生成條件"
+            )
+        
+        # 生成工單內容
+        ticket_content = await self.report_generation_service._generate_ticket_content(
+            threat=await self.report_generation_service.threat_repository.get_by_id(
+                risk_assessment.threat_id
+            ),
+            risk_assessment=risk_assessment,
+            affected_assets=await self.report_generation_service._get_affected_assets_for_ticket(
+                risk_assessment.threat_id
+            ),
+            file_format=file_format,
+        )
+        
+        # 生成工單報告
+        report = await self.report_generation_service.generate_it_ticket(
+            risk_assessment=risk_assessment,
+            file_format=file_format,
+        )
+        
+        # 設定檔案路徑（將由 Repository 設定，這裡暫時為空）
+        # 儲存報告（包含檔案）
+        await self.report_repository.save(report, ticket_content.encode('utf-8'))
+        
         logger.info(
-            "CISO 週報生成完成",
+            "IT 工單生成完成",
             report_id=report.id,
-            file_path=report.file_path,
+            risk_assessment_id=risk_assessment_id,
         )
         
         return report
