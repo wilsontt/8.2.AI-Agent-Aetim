@@ -22,6 +22,7 @@ from shared_kernel.infrastructure.database import get_db
 from reporting_notification.application.services.report_service import ReportService
 from reporting_notification.domain.value_objects.file_format import FileFormat
 from reporting_notification.domain.value_objects.report_type import ReportType
+from reporting_notification.domain.value_objects.ticket_status import TicketStatus
 from reporting_notification.domain.domain_services.report_generation_service import (
     ReportGenerationService,
 )
@@ -232,5 +233,72 @@ async def export_tickets_batch(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"批次匯出工單失敗：{str(e)}",
+        )
+
+
+class UpdateTicketStatusRequest(BaseModel):
+    """更新工單狀態請求 DTO"""
+    status: str = Field(..., description="新狀態（待處理/處理中/已完成/已關閉）")
+
+
+@router.put("/tickets/{ticket_id}/status")
+async def update_ticket_status(
+    ticket_id: str = Path(..., description="工單 ID"),
+    request_body: UpdateTicketStatusRequest = Body(...),
+    request: Request = None,
+    report_service: ReportService = Depends(get_report_service),
+):
+    """
+    更新工單狀態（AC-017-5）
+    
+    Args:
+        ticket_id: 工單 ID
+        request_body: 更新狀態請求（包含新狀態）
+        request: FastAPI Request 物件（用於取得 IP 位址和 User Agent）
+        report_service: 報告服務
+    
+    Returns:
+        Dict: 更新結果
+    """
+    try:
+        # 解析狀態
+        try:
+            new_status = TicketStatus.from_string(request_body.status)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"無效的工單狀態：{request_body.status}",
+            )
+        
+        # 取得使用者資訊（暫時使用預設值，未來可從認證系統取得）
+        user_id = None  # TODO: 從認證系統取得
+        ip_address = request.client.host if request else None
+        user_agent = request.headers.get("user-agent") if request else None
+        
+        # 更新工單狀態
+        report = await report_service.update_ticket_status(
+            ticket_id=ticket_id,
+            new_status=new_status,
+            user_id=user_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        
+        return {
+            "success": True,
+            "ticket_id": ticket_id,
+            "status": report.ticket_status.value if report.ticket_status else None,
+            "message": "工單狀態已更新",
+        }
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"更新工單狀態失敗：{str(e)}",
         )
 

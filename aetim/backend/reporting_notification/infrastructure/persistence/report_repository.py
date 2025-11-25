@@ -17,6 +17,7 @@ from ...domain.interfaces.report_repository import IReportRepository
 from ...domain.aggregates.report import Report
 from ...domain.value_objects.report_type import ReportType
 from ...domain.value_objects.file_format import FileFormat
+from ...domain.value_objects.ticket_status import TicketStatus
 from .models import Report as ReportModel
 
 logger = structlog.get_logger(__name__)
@@ -158,6 +159,11 @@ class ReportRepository(IReportRepository):
         if report.metadata:
             metadata_json = json.dumps(report.metadata, ensure_ascii=False, indent=2)
         
+        # 處理 ticket_status（僅用於 IT_Ticket 類型）
+        ticket_status_value = None
+        if report.report_type == ReportType.IT_TICKET and report.ticket_status:
+            ticket_status_value = report.ticket_status.value
+        
         if existing:
             # 更新現有報告
             existing.report_type = report.report_type.value
@@ -169,6 +175,7 @@ class ReportRepository(IReportRepository):
             existing.period_end = report.period_end
             existing.summary = report.summary
             existing.metadata = metadata_json
+            existing.ticket_status = ticket_status_value
         else:
             # 新增報告
             new_report = ReportModel(
@@ -182,6 +189,7 @@ class ReportRepository(IReportRepository):
                 period_end=report.period_end,
                 summary=report.summary,
                 metadata=metadata_json,
+                ticket_status=ticket_status_value,
             )
             self.session.add(new_report)
         
@@ -383,6 +391,18 @@ class ReportRepository(IReportRepository):
                     report_id=model.id,
                 )
         
+        # 處理 ticket_status（僅用於 IT_Ticket 類型）
+        ticket_status = None
+        if model.ticket_status:
+            try:
+                ticket_status = TicketStatus.from_string(model.ticket_status)
+            except ValueError:
+                logger.warning(
+                    "無法解析工單狀態",
+                    report_id=model.id,
+                    ticket_status=model.ticket_status,
+                )
+        
         # 建立領域模型
         report = Report(
             id=model.id,
@@ -395,6 +415,7 @@ class ReportRepository(IReportRepository):
             period_end=model.period_end,
             summary=model.summary,
             metadata=metadata,
+            ticket_status=ticket_status,
             created_at=model.created_at,
         )
         

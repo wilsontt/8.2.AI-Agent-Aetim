@@ -11,7 +11,9 @@ import uuid
 
 from ..value_objects.report_type import ReportType
 from ..value_objects.file_format import FileFormat
+from ..value_objects.ticket_status import TicketStatus
 from ..domain_events.report_generated_event import ReportGeneratedEvent
+from ..domain_events.ticket_status_updated_event import TicketStatusUpdatedEvent
 
 
 @dataclass
@@ -41,6 +43,7 @@ class Report:
     period_end: Optional[datetime] = None
     summary: Optional[str] = None  # AI 生成的摘要
     metadata: Optional[Dict[str, Any]] = None  # 報告元資料（JSON 格式）
+    ticket_status: Optional[TicketStatus] = None  # 工單狀態（僅用於 IT_Ticket 類型，AC-017-5）
     _domain_events: list = field(default_factory=list, repr=False)
     created_at: datetime = field(default_factory=datetime.utcnow)
     
@@ -177,4 +180,59 @@ class Report:
     def clear_domain_events(self) -> None:
         """清除所有領域事件"""
         self._domain_events = []
+    
+    def update_ticket_status(
+        self,
+        new_status: TicketStatus,
+        updated_by: Optional[str] = None,
+    ) -> None:
+        """
+        更新工單狀態（AC-017-5）
+        
+        狀態轉換規則：
+        - 待處理 → 處理中、已關閉
+        - 處理中 → 已完成、已關閉
+        - 已完成 → 已關閉
+        - 已關閉 → 不可變更
+        
+        Args:
+            new_status: 新狀態
+            updated_by: 更新者（可選）
+        
+        Raises:
+            ValueError: 當報告不是 IT_Ticket 類型時
+            ValueError: 當狀態轉換無效時
+        """
+        # 檢查是否為 IT_Ticket 類型
+        if self.report_type != ReportType.IT_TICKET:
+            raise ValueError("只有 IT 工單才能更新狀態")
+        
+        # 取得當前狀態（如果沒有則預設為 PENDING）
+        current_status = self.ticket_status or TicketStatus.PENDING
+        
+        # 檢查狀態轉換是否有效
+        if not current_status.can_transition_to(new_status):
+            raise ValueError(
+                f"無法從狀態 '{current_status.value}' 轉換到 '{new_status.value}'"
+            )
+        
+        # 更新狀態
+        old_status = self.ticket_status
+        self.ticket_status = new_status
+        
+        # 更新 metadata 中的狀態（保持向後相容）
+        if self.metadata is None:
+            self.metadata = {}
+        self.metadata["ticket_status"] = new_status.value
+        
+        # 發布領域事件
+        self._publish_domain_event(
+            TicketStatusUpdatedEvent(
+                ticket_id=self.id,
+                old_status=old_status or TicketStatus.PENDING,
+                new_status=new_status,
+                updated_at=datetime.utcnow(),
+                updated_by=updated_by,
+            )
+        )
 

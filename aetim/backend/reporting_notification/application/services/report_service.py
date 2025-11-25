@@ -12,6 +12,7 @@ from pathlib import Path
 from ...domain.aggregates.report import Report
 from ...domain.value_objects.report_type import ReportType
 from ...domain.value_objects.file_format import FileFormat
+from ...domain.value_objects.ticket_status import TicketStatus
 from ...domain.domain_services.report_generation_service import (
     ReportGenerationService,
     WeeklyReportData,
@@ -569,4 +570,74 @@ class ReportService:
             "file_name": file_name,
             "content_type": content_type,
         }
+    
+    async def update_ticket_status(
+        self,
+        ticket_id: str,
+        new_status: TicketStatus,
+        user_id: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> Report:
+        """
+        更新工單狀態（AC-017-5）
+        
+        Args:
+            ticket_id: 工單 ID（報告 ID）
+            new_status: 新狀態
+            user_id: 使用者 ID（用於稽核日誌）
+            ip_address: IP 位址（用於稽核日誌）
+            user_agent: User Agent（用於稽核日誌）
+        
+        Returns:
+            Report: 更新後的報告聚合根
+        
+        Raises:
+            ValueError: 當工單不存在或不是 IT_Ticket 類型時
+            ValueError: 當狀態轉換無效時
+        """
+        # 取得工單記錄
+        report = await self.report_repository.get_by_id(ticket_id)
+        if not report:
+            raise ValueError(f"找不到工單：{ticket_id}")
+        
+        # 取得舊狀態（用於日誌）
+        old_status = report.ticket_status or TicketStatus.PENDING
+        
+        # 更新狀態（會驗證狀態轉換規則並發布領域事件）
+        report.update_ticket_status(new_status, updated_by=user_id)
+        
+        # 儲存到資料庫（只更新狀態，不需要重新儲存檔案）
+        await self.report_repository._save_to_database(report)
+        
+        # 記錄稽核日誌
+        if self.audit_log_service:
+            try:
+                await self.audit_log_service.log_action(
+                    user_id=user_id,
+                    action="UPDATE",
+                    resource_type="IT_Ticket",
+                    resource_id=ticket_id,
+                    details={
+                        "old_status": old_status.value,
+                        "new_status": new_status.value,
+                    },
+                    ip_address=ip_address,
+                    user_agent=user_agent,
+                )
+            except Exception as e:
+                logger.warning(
+                    "記錄稽核日誌失敗",
+                    ticket_id=ticket_id,
+                    error=str(e),
+                )
+        
+        logger.info(
+            "工單狀態已更新",
+            ticket_id=ticket_id,
+            old_status=old_status.value,
+            new_status=new_status.value,
+        )
+        
+        return report
 

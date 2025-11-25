@@ -3,6 +3,7 @@
 """
 
 from .report_generated_event import ReportGeneratedEvent
+from .ticket_status_updated_event import TicketStatusUpdatedEvent
 
-__all__ = ["ReportGeneratedEvent"]
+__all__ = ["ReportGeneratedEvent", "TicketStatusUpdatedEvent"]
 
