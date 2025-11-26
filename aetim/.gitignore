@@ -57,8 +57,9 @@ dist/
 *.sqlite3
 data/
 
-# Logs
-logs/
+# Logs - 應用程式日誌檔案目錄
+# 日誌檔案存放在 logs/ 目錄，支援日誌輪轉（保留最近 30 天）
+/logs/
 *.log
 
 # Docker
@@ -77,8 +78,11 @@ htmlcov/
 *.pth
 models/
 
-# Reports
-reports/
+# Reports - 系統生成的報告檔案目錄
+# 報告檔案按年月分類存放：reports/yyyy/yyyymm/
+# 注意：使用 /reports/ 只忽略根目錄下的 reports/ 目錄
+# 不會影響前端路由頁面 frontend/app/reports/（程式碼需要提交）
+/reports/
 
 # Temporary files
 tmp/
