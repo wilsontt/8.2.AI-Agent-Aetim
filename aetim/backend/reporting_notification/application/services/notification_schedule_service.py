@@ -5,8 +5,9 @@
 """
 
 import asyncio
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from datetime import datetime, time
+from dataclasses import dataclass
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.memory import MemoryJobStore
@@ -18,6 +19,16 @@ from ...domain.interfaces.notification_rule_repository import INotificationRuleR
 from ..services.daily_high_risk_summary_service import DailyHighRiskSummaryService
 
 logger = structlog.get_logger(__name__)
+
+
+@dataclass
+class ScheduleExecutionHistory:
+    """排程執行歷史記錄"""
+    job_id: str
+    execution_time: datetime
+    status: str  # Success, Failed
+    error_message: Optional[str] = None
+    execution_duration: Optional[float] = None  # 執行時間（秒）
 
 
 class NotificationScheduleService:
@@ -66,6 +77,8 @@ class NotificationScheduleService:
         
         self._job_id_prefix = "daily_summary_"
         self._running_jobs: Dict[str, bool] = {}  # 追蹤正在執行的任務
+        self._execution_history: List[ScheduleExecutionHistory] = []  # 執行歷史記錄
+        self._max_history_size = 100  # 最多保留 100 筆歷史記錄
     
     async def start(self) -> None:
         """
@@ -177,6 +190,121 @@ class NotificationScheduleService:
             self.scheduler.remove_job(job_id)
             logger.info("已移除每日高風險威脅摘要排程", job_id=job_id)
     
+    async def update_daily_summary_schedule(
+        self,
+        send_time: time,
+    ) -> None:
+        """
+        更新每日高風險威脅摘要排程（AC-020-4）
+        
+        Args:
+            send_time: 新的發送時間
+        """
+        await self.add_daily_summary_schedule(send_time)
+        logger.info(
+            "已更新每日高風險威脅摘要排程",
+            send_time=send_time.strftime("%H:%M"),
+        )
+    
+    def get_schedule_status(self, job_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        取得排程任務狀態
+        
+        Args:
+            job_id: 任務 ID（可選，如果不提供則返回所有任務狀態）
+        
+        Returns:
+            Dict[str, Any]: 任務狀態資訊
+        """
+        if job_id is None:
+            job_id = f"{self._job_id_prefix}high_risk_daily"
+        
+        job = self.scheduler.get_job(job_id)
+        
+        if not job:
+            return {
+                "job_id": job_id,
+                "status": "Not Found",
+                "next_run_time": None,
+                "is_running": False,
+            }
+        
+        return {
+            "job_id": job_id,
+            "status": "Active" if job.next_run_time else "Inactive",
+            "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
+            "is_running": self._running_jobs.get(job_id, False),
+            "name": job.name,
+        }
+    
+    def get_execution_history(
+        self,
+        job_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        取得排程執行歷史記錄
+        
+        Args:
+            job_id: 任務 ID（可選，如果不提供則返回所有任務的歷史）
+            limit: 返回記錄數量限制
+        
+        Returns:
+            List[Dict[str, Any]]: 執行歷史記錄清單
+        """
+        if job_id is None:
+            job_id = f"{self._job_id_prefix}high_risk_daily"
+        
+        # 篩選指定任務的歷史記錄
+        history = [
+            h for h in self._execution_history if h.job_id == job_id
+        ]
+        
+        # 依執行時間降序排序，並限制數量
+        history.sort(key=lambda x: x.execution_time, reverse=True)
+        history = history[:limit]
+        
+        return [
+            {
+                "job_id": h.job_id,
+                "execution_time": h.execution_time.isoformat(),
+                "status": h.status,
+                "error_message": h.error_message,
+                "execution_duration": h.execution_duration,
+            }
+            for h in history
+        ]
+    
+    def _add_execution_history(
+        self,
+        job_id: str,
+        status: str,
+        error_message: Optional[str] = None,
+        execution_duration: Optional[float] = None,
+    ) -> None:
+        """
+        新增執行歷史記錄
+        
+        Args:
+            job_id: 任務 ID
+            status: 執行狀態（Success, Failed）
+            error_message: 錯誤訊息（可選）
+            execution_duration: 執行時間（秒，可選）
+        """
+        history = ScheduleExecutionHistory(
+            job_id=job_id,
+            execution_time=datetime.utcnow(),
+            status=status,
+            error_message=error_message,
+            execution_duration=execution_duration,
+        )
+        
+        self._execution_history.append(history)
+        
+        # 限制歷史記錄數量
+        if len(self._execution_history) > self._max_history_size:
+            self._execution_history = self._execution_history[-self._max_history_size:]
+    
     async def _execute_daily_summary(self) -> None:
         """
         執行每日高風險威脅摘要任務
@@ -184,6 +312,7 @@ class NotificationScheduleService:
         此方法由 APScheduler 調用，不應直接調用。
         """
         job_id = f"{self._job_id_prefix}high_risk_daily"
+        start_time = datetime.utcnow()
         
         # 檢查任務是否正在執行
         if self._running_jobs.get(job_id, False):
@@ -199,18 +328,40 @@ class NotificationScheduleService:
             logger.info(
                 "開始執行每日高風險威脅摘要任務",
                 job_id=job_id,
-                execution_time=datetime.utcnow().isoformat(),
+                execution_time=start_time.isoformat(),
             )
             
             # 發送摘要
             await self.daily_summary_service.send_summary()
             
+            # 計算執行時間
+            execution_duration = (datetime.utcnow() - start_time).total_seconds()
+            
+            # 記錄成功歷史
+            self._add_execution_history(
+                job_id=job_id,
+                status="Success",
+                execution_duration=execution_duration,
+            )
+            
             logger.info(
                 "每日高風險威脅摘要任務執行完成",
                 job_id=job_id,
+                execution_duration=execution_duration,
             )
             
         except Exception as e:
+            # 計算執行時間
+            execution_duration = (datetime.utcnow() - start_time).total_seconds()
+            
+            # 記錄失敗歷史
+            self._add_execution_history(
+                job_id=job_id,
+                status="Failed",
+                error_message=str(e),
+                execution_duration=execution_duration,
+            )
+            
             logger.error(
                 "每日高風險威脅摘要任務執行失敗",
                 job_id=job_id,
