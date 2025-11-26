@@ -5,7 +5,8 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
 from ..aggregates.risk_assessment import RiskAssessment
 
@@ -50,6 +51,28 @@ class IRiskAssessmentRepository(ABC):
         
         Returns:
             Optional[RiskAssessment]: 風險評估聚合根，如果不存在則返回 None
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_risk_score_range(
+        self,
+        min_risk_score: float,
+        max_risk_score: Optional[float] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> List[RiskAssessment]:
+        """
+        依風險分數範圍查詢風險評估
+        
+        Args:
+            min_risk_score: 最小風險分數
+            max_risk_score: 最大風險分數（可選，如果不提供則不設上限）
+            start_date: 開始日期（可選）
+            end_date: 結束日期（可選）
+        
+        Returns:
+            List[RiskAssessment]: 風險評估聚合根清單
         """
         pass
 

@@ -4,9 +4,10 @@
 實作風險評估的資料存取邏輯。
 """
 
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_
 import json
 
 from ...domain.interfaces.risk_assessment_repository import IRiskAssessmentRepository
@@ -169,6 +170,59 @@ class RiskAssessmentRepository(IRiskAssessmentRepository):
                 "查詢風險評估失敗",
                 threat_id=threat_id,
                 error=str(e),
+            )
+            raise
+    
+    async def get_by_risk_score_range(
+        self,
+        min_risk_score: float,
+        max_risk_score: Optional[float] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> List[RiskAssessment]:
+        """
+        依風險分數範圍查詢風險評估
+        
+        Args:
+            min_risk_score: 最小風險分數
+            max_risk_score: 最大風險分數（可選，如果不提供則不設上限）
+            start_date: 開始日期（可選）
+            end_date: 結束日期（可選）
+        
+        Returns:
+            List[RiskAssessment]: 風險評估聚合根清單
+        """
+        try:
+            stmt = select(RiskAssessmentModel).where(
+                RiskAssessmentModel.final_risk_score >= min_risk_score
+            )
+            
+            if max_risk_score is not None:
+                stmt = stmt.where(RiskAssessmentModel.final_risk_score <= max_risk_score)
+            
+            if start_date is not None:
+                stmt = stmt.where(RiskAssessmentModel.updated_at >= start_date)
+            
+            if end_date is not None:
+                stmt = stmt.where(RiskAssessmentModel.updated_at <= end_date)
+            
+            # 依更新時間降序排序（最新的在前）
+            stmt = stmt.order_by(RiskAssessmentModel.updated_at.desc())
+            
+            result = await self.session.execute(stmt)
+            models = result.scalars().all()
+            
+            return [self._to_domain(model) for model in models]
+            
+        except Exception as e:
+            logger.error(
+                "依風險分數範圍查詢風險評估失敗",
+                min_risk_score=min_risk_score,
+                max_risk_score=max_risk_score,
+                start_date=start_date,
+                end_date=end_date,
+                error=str(e),
+                exc_info=True,
             )
             raise
 
