@@ -7,10 +7,12 @@
 from .pir_created_event import PIRCreatedEvent
 from .pir_updated_event import PIRUpdatedEvent
 from .pir_toggled_event import PIRToggledEvent
+from .risk_assessment_completed_event import RiskAssessmentCompletedEvent
 
 __all__ = [
     "PIRCreatedEvent",
     "PIRUpdatedEvent",
     "PIRToggledEvent",
+    "RiskAssessmentCompletedEvent",
 ]
 

@@ -23,6 +23,10 @@ from asset_management.domain.aggregates.asset import Asset
 from asset_management.domain.interfaces.asset_repository import IAssetRepository
 from analysis_assessment.domain.aggregates.pir import PIR
 from analysis_assessment.domain.interfaces.pir_repository import IPIRRepository
+from analysis_assessment.domain.domain_events.risk_assessment_completed_event import (
+    RiskAssessmentCompletedEvent,
+)
+from shared_kernel.infrastructure.event_bus import get_event_bus
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -118,6 +122,19 @@ class RiskAssessmentService:
 
         # 7. 儲存歷史記錄（AC-012-5）
         await self.history_repository.save_history(risk_assessment)
+
+        # 8. 發布風險評估完成事件
+        event = RiskAssessmentCompletedEvent(
+            risk_assessment_id=risk_assessment.id,
+            threat_id=threat_id,
+            final_risk_score=risk_assessment.final_risk_score,
+            risk_level=risk_assessment.risk_level,
+            affected_asset_count=risk_assessment.affected_asset_count,
+            completed_at=risk_assessment.updated_at or risk_assessment.created_at,
+        )
+        
+        event_bus = get_event_bus()
+        await event_bus.publish(event)
 
         logger.info(
             "風險評估計算完成並已儲存歷史記錄",
