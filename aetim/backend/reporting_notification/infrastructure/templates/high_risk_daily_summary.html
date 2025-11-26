@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高風險威脅每日摘要</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="max-w-4xl mx-auto p-6">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <!-- 標題 -->
+            <div class="border-b-4 border-orange-600 pb-4 mb-6">
+                <h1 class="text-3xl font-bold text-orange-600">📊 高風險威脅每日摘要</h1>
+                <p class="text-gray-600 mt-2">{{ report_date }}</p>
+            </div>
+
+            <!-- 統計資訊 -->
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold mb-4">統計資訊</h2>
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="bg-orange-50 border-l-4 border-orange-600 p-4">
+                        <p class="text-sm text-gray-600">威脅數量</p>
+                        <p class="text-3xl font-bold text-orange-600">{{ threat_count }}</p>
+                    </div>
+                    <div class="bg-blue-50 border-l-4 border-blue-600 p-4">
+                        <p class="text-sm text-gray-600">受影響資產總數</p>
+                        <p class="text-3xl font-bold text-blue-600">{{ total_affected_assets }}</p>
+                    </div>
+                    <div class="bg-red-50 border-l-4 border-red-600 p-4">
+                        <p class="text-sm text-gray-600">平均風險分數</p>
+                        <p class="text-3xl font-bold text-red-600">{{ average_risk_score }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 威脅清單 -->
+            {% if threats %}
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold mb-4">威脅清單</h2>
+                <div class="space-y-4">
+                    {% for threat in threats %}
+                    <div class="border-l-4 border-orange-600 bg-orange-50 p-4 rounded">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <h3 class="font-semibold text-lg">{{ threat.title }}</h3>
+                                <p class="text-sm text-gray-600 mt-1">CVE: {{ threat.cve_id }}</p>
+                                <p class="text-sm text-gray-600">風險分數: <span class="font-semibold text-red-600">{{ threat.risk_score }}/10.0</span></p>
+                                <p class="text-sm text-gray-600 mt-2">受影響資產: {{ threat.affected_assets_count }} 個</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- 受影響資產統計 -->
+            {% if asset_statistics %}
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold mb-4">受影響資產統計</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">資產類型</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">數量</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">重要性分布</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for stat in asset_statistics %}
+                            <tr>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ stat.type }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ stat.count }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ stat.importance_distribution }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- 頁尾 -->
+            <div class="border-t pt-4 mt-6">
+                <p class="text-sm text-gray-500">
+                    此摘要由 AETIM 安全系統自動發送，請勿回覆此郵件。
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

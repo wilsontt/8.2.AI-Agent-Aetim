@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>嚴重威脅通知</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="max-w-2xl mx-auto p-6">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <!-- 標題 -->
+            <div class="border-b-4 border-red-600 pb-4 mb-6">
+                <h1 class="text-3xl font-bold text-red-600">⚠️ 嚴重威脅通知</h1>
+                <p class="text-gray-600 mt-2">發現高風險安全威脅，請立即處理</p>
+            </div>
+
+            <!-- 威脅資訊 -->
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold mb-4">威脅資訊</h2>
+                <div class="bg-red-50 border-l-4 border-red-600 p-4">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <p class="text-sm text-gray-600">威脅標題</p>
+                            <p class="font-semibold text-lg">{{ threat_title }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">CVE 編號</p>
+                            <p class="font-semibold text-lg">{{ cve_id }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">風險分數</p>
+                            <p class="font-semibold text-lg text-red-600">{{ risk_score }}/10.0</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600">受影響資產數量</p>
+                            <p class="font-semibold text-lg">{{ affected_assets_count }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 受影響資產清單 -->
+            {% if affected_assets %}
+            <div class="mb-6">
+                <h2 class="text-xl font-semibold mb-4">受影響資產</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">資產名稱</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">資產類型</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">重要性</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for asset in affected_assets %}
+                            <tr>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ asset.name }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ asset.type }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">{{ asset.importance }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- 詳細資訊連結 -->
+            <div class="mb-6">
+                <a href="{{ detail_url }}" class="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                    查看詳細資訊
+                </a>
+            </div>
+
+            <!-- 頁尾 -->
+            <div class="border-t pt-4 mt-6">
+                <p class="text-sm text-gray-500">
+                    此通知由 AETIM 安全系統自動發送，請勿回覆此郵件。
+                </p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+
