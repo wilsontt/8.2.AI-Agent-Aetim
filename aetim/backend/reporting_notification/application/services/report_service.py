@@ -640,4 +640,114 @@ class ReportService:
         )
         
         return report
+    
+    async def get_reports(
+        self,
+        report_type: Optional[ReportType] = None,
+        file_format: Optional[FileFormat] = None,
+        ticket_status: Optional[TicketStatus] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        page: int = 1,
+        page_size: int = 20,
+        sort_by: str = "generated_at",
+        sort_order: str = "desc",
+    ) -> Dict[str, Any]:
+        """
+        查詢報告清單
+        
+        Args:
+            report_type: 報告類型篩選（可選）
+            file_format: 檔案格式篩選（可選）
+            ticket_status: 工單狀態篩選（可選）
+            start_date: 開始日期篩選（可選）
+            end_date: 結束日期篩選（可選）
+            page: 頁碼（從 1 開始）
+            page_size: 每頁數量
+            sort_by: 排序欄位（預設：generated_at）
+            sort_order: 排序順序（asc/desc，預設：desc）
+        
+        Returns:
+            Dict[str, Any]: 包含 items（報告清單）、total（總數）、page、page_size、total_pages
+        """
+        return await self.report_repository.get_all(
+            report_type=report_type,
+            start_date=start_date,
+            end_date=end_date,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+    
+    async def get_report_by_id(self, report_id: str) -> Optional[Report]:
+        """
+        查詢報告詳細資訊
+        
+        Args:
+            report_id: 報告 ID
+        
+        Returns:
+            Optional[Report]: 報告聚合根，如果不存在則返回 None
+        """
+        return await self.report_repository.get_by_id(report_id)
+    
+    async def get_report_content(self, report_id: str) -> Optional[str]:
+        """
+        取得報告內容（用於預覽）
+        
+        Args:
+            report_id: 報告 ID
+        
+        Returns:
+            Optional[str]: 報告內容（HTML 字串），如果不存在或格式不支援則返回 None
+        """
+        report = await self.report_repository.get_by_id(report_id)
+        if not report:
+            return None
+        
+        # 僅支援 HTML 格式的預覽
+        if report.file_format != FileFormat.HTML:
+            return None
+        
+        file_content = await self.report_repository.get_file_content(report_id)
+        if not file_content:
+            return None
+        
+        return file_content.decode("utf-8")
+    
+    async def download_report(
+        self,
+        report_id: str,
+        format: Optional[FileFormat] = None,
+    ) -> Optional[bytes]:
+        """
+        下載報告檔案
+        
+        Args:
+            report_id: 報告 ID
+            format: 檔案格式（可選，如果不提供則使用報告的原始格式）
+        
+        Returns:
+            Optional[bytes]: 檔案內容（位元組），如果不存在則返回 None
+        """
+        report = await self.report_repository.get_by_id(report_id)
+        if not report:
+            return None
+        
+        # 如果指定了格式，且與原始格式不同，需要轉換
+        # TODO: 實作格式轉換邏輯（例如：HTML 轉 PDF）
+        target_format = format or report.file_format
+        
+        if target_format == report.file_format:
+            return await self.report_repository.get_file_content(report_id)
+        else:
+            # 格式轉換邏輯（未來實作）
+            logger.warning(
+                "格式轉換尚未實作",
+                report_id=report_id,
+                original_format=report.file_format.value,
+                target_format=target_format.value,
+            )
+            return None
 
