@@ -5,8 +5,10 @@
 """
 
 from .audit_log_repository import IAuditLogRepository
+from .system_configuration_repository import ISystemConfigurationRepository
 
 __all__ = [
     "IAuditLogRepository",
+    "ISystemConfigurationRepository",
 ]
 
