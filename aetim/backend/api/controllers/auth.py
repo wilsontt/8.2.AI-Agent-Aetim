@@ -286,3 +286,64 @@ async def get_current_user(
             detail=f"Token 驗證失敗: {str(e)}",
         )
 
+
+@router.get("/permissions")
+async def get_user_permissions(
+    http_request: Request,
+    auth_service: AuthService = Depends(get_auth_service),
+    db_session: AsyncSession = Depends(get_db_session),
+    token: Optional[str] = None,  # 從 Authorization header 中取得（需要中介軟體）
+):
+    """
+    取得使用者權限
+    
+    符合 AC-023-3：在 UI 中隱藏使用者無權存取的功能
+    
+    Args:
+        http_request: HTTP 請求
+        auth_service: 身份驗證服務
+        db_session: 資料庫 Session
+        token: Access Token（從 Authorization header 中取得）
+    
+    Returns:
+        dict: 使用者角色和權限
+    
+    Raises:
+        HTTPException: 當 Token 無效或過期時
+    """
+    if not token:
+        raise HTTPException(
+            status_code=401,
+            detail="未提供 Token",
+        )
+    
+    try:
+        user_info = await auth_service.validate_token(token)
+        user = await auth_service.get_user_by_subject_id(user_info.sub)
+        
+        if not user:
+            raise HTTPException(
+                status_code=404,
+                detail="使用者不存在",
+            )
+        
+        # 取得使用者權限
+        from system_management.application.services.authorization_service import AuthorizationService
+        from system_management.infrastructure.persistence.audit_log_repository import AuditLogRepository
+        
+        audit_log_repository = AuditLogRepository(db_session)
+        authorization_service = AuthorizationService(db_session, audit_log_repository)
+        
+        roles = await authorization_service.get_user_roles(user.id)
+        permissions = await authorization_service.get_user_permissions(user.id)
+        
+        return {
+            "roles": roles,
+            "permissions": list(permissions),
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Token 驗證失敗: {str(e)}",
+        )
+
