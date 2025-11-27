@@ -39,7 +39,7 @@ class AuditLog:
             raise ValueError("資源類型不能為空")
         
         # 驗證操作類型
-        valid_actions = ["CREATE", "UPDATE", "DELETE", "IMPORT", "VIEW", "TOGGLE", "EXPORT"]
+        valid_actions = ["CREATE", "UPDATE", "DELETE", "IMPORT", "VIEW", "TOGGLE", "EXPORT", "LOGIN", "LOGOUT"]
         if self.action.upper() not in valid_actions:
             raise ValueError(f"操作類型必須為以下之一：{', '.join(valid_actions)}")
     

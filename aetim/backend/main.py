@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from shared_kernel.infrastructure.logging import setup_logging, get_logger
 from shared_kernel.infrastructure.tracing import TracingMiddleware
-from api.controllers import health, assets, threats, reports, metrics, pirs, threat_feeds, audit_logs
+from api.controllers import health, assets, threats, reports, metrics, pirs, threat_feeds, audit_logs, auth
 from shared_kernel.infrastructure.database import init_db
 from shared_kernel.infrastructure.redis import init_redis, close_redis
 import os
@@ -68,6 +68,7 @@ app.add_middleware(TracingMiddleware)
 # 註冊路由
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["Metrics"])
+app.include_router(auth.router, tags=["身份驗證"])
 app.include_router(assets.router, prefix="/api/v1/assets", tags=["Assets"])
 app.include_router(pirs.router, prefix="/api/v1/pirs", tags=["PIRs"])
 app.include_router(threat_feeds.router, prefix="/api/v1/threat-feeds", tags=["Threat Feeds"])

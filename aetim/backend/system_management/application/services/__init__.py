@@ -1,12 +1,11 @@
 """
-系統管理應用層服務
+應用層服務模組
 
-應用層服務（Application Services）協調領域模型和基礎設施。
+提供應用層服務。
 """
 
-from .audit_log_service import AuditLogService
+from .auth_service import AuthService
 
 __all__ = [
-    "AuditLogService",
+    "AuthService",
 ]
-
