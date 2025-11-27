@@ -38,6 +38,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import { exportChartAsPNG, exportChartAsPDF, exportMultipleChartsAsPDF } from "@/lib/utils/chartExport";
 
 // 狀態顏色映射（符合 AC-027-4：顏色編碼）
 const STATUS_COLORS = {
@@ -82,6 +83,7 @@ export default function DashboardPage() {
   const [timeRange, setTimeRange] = useState("30d");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadAllData();
@@ -228,6 +230,54 @@ export default function DashboardPage() {
       count: item.count,
       priority: item.priority,
     }));
+  };
+
+  /**
+   * 匯出單一圖表為 PNG
+   */
+  const handleExportPNG = async (elementId: string, filename: string) => {
+    try {
+      setExporting(true);
+      await exportChartAsPNG(elementId, filename);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "匯出 PNG 失敗");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /**
+   * 匯出單一圖表為 PDF
+   */
+  const handleExportPDF = async (elementId: string, filename: string, title?: string) => {
+    try {
+      setExporting(true);
+      await exportChartAsPDF(elementId, filename, title);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "匯出 PDF 失敗");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /**
+   * 匯出所有圖表為 PDF
+   */
+  const handleExportAllPDF = async () => {
+    try {
+      setExporting(true);
+      const charts = [
+        { id: "threat-trend-chart", title: "威脅數量趨勢" },
+        { id: "risk-distribution-chart", title: "風險分數分布" },
+        { id: "affected-assets-chart", title: "受影響資產統計" },
+        { id: "threat-sources-chart", title: "威脅來源統計" },
+      ];
+      await exportMultipleChartsAsPDF(charts, "威脅統計圖表");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "匯出 PDF 失敗");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -411,118 +461,207 @@ export default function DashboardPage() {
 
             {/* 威脅統計區塊（AC-028-1：提供威脅情資的統計圖表） */}
             <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-gray-900">威脅統計</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">威脅統計</h2>
+                <button
+                  onClick={handleExportAllPDF}
+                  disabled={exporting}
+                  className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  {exporting ? "匯出中..." : "匯出所有圖表為 PDF"}
+                </button>
+              </div>
 
               {/* 威脅數量趨勢圖表 */}
               <div className="rounded-lg border border-gray-200 bg-white p-6">
-                <h3 className="mb-4 text-lg font-semibold text-gray-900">威脅數量趨勢</h3>
-                {threatTrend && threatTrend.data.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <LineChart data={threatTrend.data}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 12 }}
-                        angle={-45}
-                        textAnchor="end"
-                        height={80}
-                      />
-                      <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="count"
-                        stroke="#3B82F6"
-                        strokeWidth={2}
-                        name="威脅數量"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-[300px] items-center justify-center text-gray-500">
-                    沒有資料
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">威脅數量趨勢</h3>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleExportPNG("threat-trend-chart", "威脅數量趨勢")}
+                      disabled={exporting || !threatTrend || threatTrend.data.length === 0}
+                      className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      PNG
+                    </button>
+                    <button
+                      onClick={() => handleExportPDF("threat-trend-chart", "威脅數量趨勢", "威脅數量趨勢")}
+                      disabled={exporting || !threatTrend || threatTrend.data.length === 0}
+                      className="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      PDF
+                    </button>
                   </div>
-                )}
+                </div>
+                <div id="threat-trend-chart">
+                  {threatTrend && threatTrend.data.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={300}>
+                      <LineChart data={threatTrend.data}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={80}
+                        />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="count"
+                          stroke="#3B82F6"
+                          strokeWidth={2}
+                          name="威脅數量"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-[300px] items-center justify-center text-gray-500">
+                      沒有資料
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 風險分數分布圖表 */}
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                 <div className="rounded-lg border border-gray-200 bg-white p-6">
-                  <h3 className="mb-4 text-lg font-semibold text-gray-900">風險分數分布</h3>
-                  {riskDistribution && riskDistribution.total > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <PieChart>
-                        <Pie
-                          data={prepareRiskDistributionData()}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {prepareRiskDistributionData().map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex h-[300px] items-center justify-center text-gray-500">
-                      沒有資料
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">風險分數分布</h3>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleExportPNG("risk-distribution-chart", "風險分數分布")}
+                        disabled={exporting || !riskDistribution || riskDistribution.total === 0}
+                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        PNG
+                      </button>
+                      <button
+                        onClick={() => handleExportPDF("risk-distribution-chart", "風險分數分布", "風險分數分布")}
+                        disabled={exporting || !riskDistribution || riskDistribution.total === 0}
+                        className="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        PDF
+                      </button>
                     </div>
-                  )}
+                  </div>
+                  <div id="risk-distribution-chart">
+                    {riskDistribution && riskDistribution.total > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <PieChart>
+                          <Pie
+                            data={prepareRiskDistributionData()}
+                            cx="50%"
+                            cy="50%"
+                            labelLine={false}
+                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            outerRadius={80}
+                            fill="#8884d8"
+                            dataKey="value"
+                          >
+                            {prepareRiskDistributionData().map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-[300px] items-center justify-center text-gray-500">
+                        沒有資料
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* 受影響資產統計圖表 */}
                 <div className="rounded-lg border border-gray-200 bg-white p-6">
-                  <h3 className="mb-4 text-lg font-semibold text-gray-900">受影響資產統計（依類型）</h3>
-                  {affectedAssets && Object.keys(affectedAssets.by_type).length > 0 ? (
-                    <ResponsiveContainer width="100%" height={300}>
-                      <BarChart data={prepareAffectedAssetsData()}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                        <YAxis tick={{ fontSize: 12 }} />
-                        <Tooltip />
-                        <Legend />
-                        <Bar dataKey="count" fill="#3B82F6" name="受影響資產數量" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex h-[300px] items-center justify-center text-gray-500">
-                      沒有資料
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-gray-900">受影響資產統計（依類型）</h3>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleExportPNG("affected-assets-chart", "受影響資產統計")}
+                        disabled={exporting || !affectedAssets || Object.keys(affectedAssets.by_type).length === 0}
+                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        PNG
+                      </button>
+                      <button
+                        onClick={() => handleExportPDF("affected-assets-chart", "受影響資產統計", "受影響資產統計")}
+                        disabled={exporting || !affectedAssets || Object.keys(affectedAssets.by_type).length === 0}
+                        className="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        PDF
+                      </button>
                     </div>
-                  )}
+                  </div>
+                  <div id="affected-assets-chart">
+                    {affectedAssets && Object.keys(affectedAssets.by_type).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={prepareAffectedAssetsData()}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                          <YAxis tick={{ fontSize: 12 }} />
+                          <Tooltip />
+                          <Legend />
+                          <Bar dataKey="count" fill="#3B82F6" name="受影響資產數量" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="flex h-[300px] items-center justify-center text-gray-500">
+                        沒有資料
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* 威脅來源統計圖表 */}
               <div className="rounded-lg border border-gray-200 bg-white p-6">
-                <h3 className="mb-4 text-lg font-semibold text-gray-900">威脅來源統計</h3>
-                {threatSources && threatSources.data.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={400}>
-                    <BarChart data={prepareThreatSourcesData()} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis type="number" tick={{ fontSize: 12 }} />
-                      <YAxis
-                        dataKey="name"
-                        type="category"
-                        tick={{ fontSize: 12 }}
-                        width={150}
-                      />
-                      <Tooltip />
-                      <Legend />
-                      <Bar dataKey="count" fill="#3B82F6" name="威脅數量" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-[400px] items-center justify-center text-gray-500">
-                    沒有資料
+                <div className="mb-4 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">威脅來源統計</h3>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => handleExportPNG("threat-sources-chart", "威脅來源統計")}
+                      disabled={exporting || !threatSources || threatSources.data.length === 0}
+                      className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      PNG
+                    </button>
+                    <button
+                      onClick={() => handleExportPDF("threat-sources-chart", "威脅來源統計", "威脅來源統計")}
+                      disabled={exporting || !threatSources || threatSources.data.length === 0}
+                      className="rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    >
+                      PDF
+                    </button>
                   </div>
-                )}
+                </div>
+                <div id="threat-sources-chart">
+                  {threatSources && threatSources.data.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={400}>
+                      <BarChart data={prepareThreatSourcesData()} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" tick={{ fontSize: 12 }} />
+                        <YAxis
+                          dataKey="name"
+                          type="category"
+                          tick={{ fontSize: 12 }}
+                          width={150}
+                        />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="count" fill="#3B82F6" name="威脅數量" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-[400px] items-center justify-center text-gray-500">
+                      沒有資料
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
