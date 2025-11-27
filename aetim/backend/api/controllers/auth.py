@@ -16,7 +16,7 @@ from system_management.application.dtos.auth_dto import (
     LogoutRequest,
 )
 from system_management.infrastructure.external_services.oauth2_service import OAuth2Config
-from shared_kernel.infrastructure.dependencies import get_db_session
+from shared_kernel.infrastructure.database import get_db
 from shared_kernel.infrastructure.logging import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,7 +48,7 @@ def get_oauth2_config() -> OAuth2Config:
 
 
 def get_auth_service(
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = Depends(get_db),
     oauth2_config: OAuth2Config = Depends(get_oauth2_config),
 ) -> AuthService:
     """
@@ -291,7 +291,7 @@ async def get_current_user(
 async def get_user_permissions(
     http_request: Request,
     auth_service: AuthService = Depends(get_auth_service),
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = Depends(get_db),
     token: Optional[str] = None,  # 從 Authorization header 中取得（需要中介軟體）
 ):
     """

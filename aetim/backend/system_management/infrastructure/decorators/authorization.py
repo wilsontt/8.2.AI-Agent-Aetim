@@ -11,7 +11,7 @@ from fastapi import HTTPException, Request, Depends
 from ...application.services.authorization_service import AuthorizationService
 from ...domain.value_objects.role_name import RoleName
 from ...domain.value_objects.permission_name import PermissionName
-from shared_kernel.infrastructure.dependencies import get_db_session
+from shared_kernel.infrastructure.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from shared_kernel.infrastructure.logging import get_logger
 
@@ -19,7 +19,7 @@ logger = get_logger(__name__)
 
 
 def get_authorization_service(
-    db_session: AsyncSession = Depends(get_db_session),
+    db_session: AsyncSession = Depends(get_db),
 ) -> AuthorizationService:
     """
     取得授權服務
@@ -38,19 +38,27 @@ def get_authorization_service(
 
 def get_current_user_id(request: Request) -> Optional[str]:
     """
-    從請求中取得使用者 ID（需要中介軟體設定）
+    從請求中取得使用者 ID（由 AuthenticationMiddleware 設定）
+    
+    符合 AC-023-4：在 API 層級驗證權限，防止未授權存取
     
     Args:
         request: FastAPI Request
     
     Returns:
         Optional[str]: 使用者 ID
+    
+    Raises:
+        HTTPException: 當未提供使用者資訊時
     """
-    # TODO: 從 Token 中取得使用者 ID（需要實作中介軟體）
-    # 目前先從 request.state 取得（如果有的話）
     if hasattr(request.state, "user_id"):
         return request.state.user_id
-    return None
+    
+    # 如果中介軟體未設定使用者 ID，表示未通過身份驗證
+    raise HTTPException(
+        status_code=401,
+        detail="未提供使用者資訊",
+    )
 
 
 def require_role(*roles: RoleName):

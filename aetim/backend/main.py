@@ -65,6 +65,10 @@ app.add_middleware(
 # 設定追蹤中介軟體（必須在其他中介軟體之前）
 app.add_middleware(TracingMiddleware)
 
+# 設定身份驗證中介軟體（必須在路由之前）
+from system_management.infrastructure.middleware.authentication import AuthenticationMiddleware
+app.add_middleware(AuthenticationMiddleware)
+
 # 註冊路由
 app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["Metrics"])
