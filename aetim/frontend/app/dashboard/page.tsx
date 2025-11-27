@@ -17,12 +17,14 @@ import {
   getAffectedAssetStatistics,
   getThreatSourceStatistics,
 } from "@/lib/api/threat_statistics";
+import { getAssetStatistics } from "@/lib/api/asset_statistics";
 import type {
   ThreatTrendResponse,
   RiskDistributionResponse,
   AffectedAssetStatisticsResponse,
   ThreatSourceStatisticsResponse,
 } from "@/types/threat_statistics";
+import type { AssetStatistics } from "@/types/asset_statistics";
 import {
   LineChart,
   Line,
@@ -77,6 +79,7 @@ export default function DashboardPage() {
   const [riskDistribution, setRiskDistribution] = useState<RiskDistributionResponse | null>(null);
   const [affectedAssets, setAffectedAssets] = useState<AffectedAssetStatisticsResponse | null>(null);
   const [threatSources, setThreatSources] = useState<ThreatSourceStatisticsResponse | null>(null);
+  const [assetStatistics, setAssetStatistics] = useState<AssetStatistics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -116,12 +119,14 @@ export default function DashboardPage() {
         riskDistributionData,
         affectedAssetsData,
         threatSourcesData,
+        assetStatisticsData,
       ] = await Promise.all([
         getSystemStatus(),
         getThreatTrend(startDate, endDate, "day"),
         getRiskDistribution(startDate, endDate),
         getAffectedAssetStatistics(startDate, endDate),
         getThreatSourceStatistics(startDate, endDate),
+        getAssetStatistics(),
       ]);
 
       setStatus(systemStatusData);
@@ -129,6 +134,7 @@ export default function DashboardPage() {
       setRiskDistribution(riskDistributionData);
       setAffectedAssets(affectedAssetsData);
       setThreatSources(threatSourcesData);
+      setAssetStatistics(assetStatisticsData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "載入資料失敗");
     } finally {
@@ -455,6 +461,157 @@ export default function DashboardPage() {
                       {status?.threat_collection_status.filter((s) => s.status === "error").length || 0}
                     </div>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 資產統計區塊 */}
+            <div className="space-y-6">
+              <h2 className="text-2xl font-bold text-gray-900">資產統計</h2>
+
+              {/* 資產統計卡片 */}
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+                {/* 資產總數 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="text-sm font-medium text-gray-500">資產總數</h3>
+                  <div className="mt-2">
+                    <div className="text-2xl font-bold text-gray-900">
+                      {assetStatistics?.total_count || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">筆資產</div>
+                  </div>
+                </div>
+
+                {/* 受威脅影響的資產 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="text-sm font-medium text-gray-500">受威脅影響的資產</h3>
+                  <div className="mt-2">
+                    <div className="text-2xl font-bold text-red-600">
+                      {assetStatistics?.affected_assets.count || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">
+                      {assetStatistics?.affected_assets.percentage || 0}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* 對外暴露資產 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="text-sm font-medium text-gray-500">對外暴露資產</h3>
+                  <div className="mt-2">
+                    <div className="text-2xl font-bold text-yellow-600">
+                      {assetStatistics?.public_facing_count || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">需特別關注</div>
+                  </div>
+                </div>
+
+                {/* 高敏感度資產 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="text-sm font-medium text-gray-500">高敏感度資產</h3>
+                  <div className="mt-2">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {assetStatistics?.by_sensitivity["高"] || 0}
+                    </div>
+                    <div className="text-sm text-gray-600">資料敏感度高</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 資產分布圖表 */}
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                {/* 依資產類型統計 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="mb-4 text-lg font-semibold text-gray-900">依資產類型統計</h3>
+                  {assetStatistics && Object.keys(assetStatistics.by_type).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={Object.entries(assetStatistics.by_type).map(([name, count]) => ({ name: name || "未知", count }))}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                        <YAxis tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#3B82F6" name="資產數量" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-[250px] items-center justify-center text-gray-500">
+                      沒有資料
+                    </div>
+                  )}
+                </div>
+
+                {/* 依資料敏感度統計 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="mb-4 text-lg font-semibold text-gray-900">依資料敏感度統計</h3>
+                  {assetStatistics && Object.keys(assetStatistics.by_sensitivity).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={Object.entries(assetStatistics.by_sensitivity).map(([name, value]) => ({
+                            name,
+                            value,
+                            color: name === "高" ? "#DC2626" : name === "中" ? "#F59E0B" : "#10B981",
+                          }))}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={70}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {Object.entries(assetStatistics.by_sensitivity).map(([name], index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={name === "高" ? "#DC2626" : name === "中" ? "#F59E0B" : "#10B981"}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-[250px] items-center justify-center text-gray-500">
+                      沒有資料
+                    </div>
+                  )}
+                </div>
+
+                {/* 依業務關鍵性統計 */}
+                <div className="rounded-lg border border-gray-200 bg-white p-6">
+                  <h3 className="mb-4 text-lg font-semibold text-gray-900">依業務關鍵性統計</h3>
+                  {assetStatistics && Object.keys(assetStatistics.by_criticality).length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={Object.entries(assetStatistics.by_criticality).map(([name, value]) => ({
+                            name,
+                            value,
+                            color: name === "高" ? "#DC2626" : name === "中" ? "#F59E0B" : "#10B981",
+                          }))}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          outerRadius={70}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {Object.entries(assetStatistics.by_criticality).map(([name], index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={name === "高" ? "#DC2626" : name === "中" ? "#F59E0B" : "#10B981"}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex h-[250px] items-center justify-center text-gray-500">
+                      沒有資料
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

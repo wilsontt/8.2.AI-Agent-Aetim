@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from shared_kernel.infrastructure.logging import setup_logging, get_logger
 from shared_kernel.infrastructure.tracing import TracingMiddleware
-from api.controllers import health, assets, threats, reports, metrics, pirs, threat_feeds, audit_logs, auth, system_configuration, system_status, threat_statistics
+from api.controllers import health, assets, threats, reports, metrics, pirs, threat_feeds, audit_logs, auth, system_configuration, system_status, threat_statistics, asset_statistics
 from shared_kernel.infrastructure.database import init_db
 from shared_kernel.infrastructure.redis import init_redis, close_redis
 import os
@@ -82,6 +82,7 @@ app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(system_configuration.router, tags=["系統設定"])
 app.include_router(system_status.router, tags=["系統狀態"])
 app.include_router(threat_statistics.router, tags=["威脅統計"])
+app.include_router(asset_statistics.router, tags=["資產統計"])
 
 
 if __name__ == "__main__":
