@@ -65,6 +65,18 @@ app.add_middleware(
 # 設定追蹤中介軟體（必須在其他中介軟體之前）
 app.add_middleware(TracingMiddleware)
 
+# 設定安全性標頭中介軟體（必須在其他中介軟體之前）
+from shared_kernel.infrastructure.middleware.security import SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 設定輸入驗證中介軟體（必須在身份驗證之前）
+from shared_kernel.infrastructure.middleware.security import InputValidationMiddleware
+app.add_middleware(InputValidationMiddleware)
+
+# 設定速率限制中介軟體（必須在身份驗證之前）
+from shared_kernel.infrastructure.middleware.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware, requests_per_minute=60, requests_per_hour=1000)
+
 # 設定效能監控中介軟體（必須在身份驗證之前）
 from shared_kernel.infrastructure.middleware.performance import PerformanceMonitoringMiddleware
 app.add_middleware(PerformanceMonitoringMiddleware)
