@@ -65,6 +65,10 @@ app.add_middleware(
 # 設定追蹤中介軟體（必須在其他中介軟體之前）
 app.add_middleware(TracingMiddleware)
 
+# 設定效能監控中介軟體（必須在身份驗證之前）
+from shared_kernel.infrastructure.middleware.performance import PerformanceMonitoringMiddleware
+app.add_middleware(PerformanceMonitoringMiddleware)
+
 # 設定身份驗證中介軟體（必須在路由之前）
 from system_management.infrastructure.middleware.authentication import AuthenticationMiddleware
 app.add_middleware(AuthenticationMiddleware)

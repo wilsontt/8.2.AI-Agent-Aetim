@@ -14,6 +14,7 @@ from threat_intelligence.infrastructure.persistence.models import Threat, Threat
 from analysis_assessment.infrastructure.persistence.models import RiskAssessment, ThreatAssetAssociation
 from asset_management.infrastructure.persistence.models import Asset
 from shared_kernel.infrastructure.logging import get_logger
+from shared_kernel.infrastructure.decorators.cache import cache_result
 
 logger = get_logger(__name__)
 
@@ -36,6 +37,7 @@ class ThreatStatisticsService:
         """
         self.db_session = db_session
     
+    @cache_result(ttl=300, key_prefix="cache:threat_statistics:trend")
     async def get_threat_trend(
         self,
         start_date: datetime | None = None,

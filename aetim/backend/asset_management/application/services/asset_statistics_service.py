@@ -30,6 +30,7 @@ class AssetStatisticsService:
         """
         self.db_session = db_session
     
+    @cache_result(ttl=300, key_prefix="cache:asset_statistics")
     async def get_asset_statistics(self) -> Dict[str, Any]:
         """
         取得資產統計
