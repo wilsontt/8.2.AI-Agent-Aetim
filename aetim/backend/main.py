@@ -51,6 +51,9 @@ app = FastAPI(
     description="AI 驅動之自動化威脅情資管理系統 API",
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
 # 設定 CORS

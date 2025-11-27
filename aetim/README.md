@@ -167,12 +167,32 @@ pytest
 pytest --cov=backend --cov-report=html
 ```
 
-## 相關文件
+## 文件
 
+### API 文件
+- **API 文件**：`docs/API.md` - API 端點說明與使用範例
+- **OpenAPI 規格**：http://localhost:8000/openapi.json
+- **Swagger UI**：http://localhost:8000/docs
+- **ReDoc**：http://localhost:8000/redoc
+
+### 系統文件
+- **系統架構文件**：`docs/ARCHITECTURE.md` - 系統架構說明
+- **部署文件**：`docs/DEPLOYMENT.md` - 部署步驟與設定
+- **操作手冊**：`docs/OPERATIONS.md` - 日常操作流程
+- **維護手冊**：`docs/MAINTENANCE.md` - 維護作業說明
+
+### 開發文件
+- **開發文件**：`docs/DEVELOPMENT.md` - 開發環境設定與規範
+- **端對端測試文件**：`frontend/e2e/README.md` - 測試說明
+
+### 使用者文件
+- **使用者手冊**：`docs/USER_GUIDE.md` - 使用者操作指南
+
+### 需求文件
 - **系統需求規格**：`系統需求設計與分析/spec.md`
 - **實作計畫**：`系統需求設計與分析/plan.md`
 - **開發任務清單**：`系統需求設計與分析/tasks.md`
-- **專案憲章**：`系統需求設計與分析/1.專案憲章 Project Constitution..md`
+- **專案憲章**：`系統需求設計與分析/1.專案憲章 Project Constitution.md`
 
 ## 授權
 
