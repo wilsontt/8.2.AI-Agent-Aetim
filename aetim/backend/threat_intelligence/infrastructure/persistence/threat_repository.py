@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from ...domain.interfaces.threat_repository import IThreatRepository
 from ...domain.aggregates.threat import Threat
-from ..models import Threat as ThreatModel
+from .models import Threat as ThreatModel
 from .threat_mapper import ThreatMapper
 from shared_kernel.infrastructure.logging import get_logger
 

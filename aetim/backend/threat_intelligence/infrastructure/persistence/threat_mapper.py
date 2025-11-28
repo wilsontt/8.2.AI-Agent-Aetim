@@ -13,7 +13,7 @@ from ...domain.aggregates.threat import Threat
 from ...domain.value_objects.threat_severity import ThreatSeverity
 from ...domain.value_objects.threat_status import ThreatStatus
 from ...domain.entities.threat_product import ThreatProduct
-from ..models import Threat as ThreatModel
+from .models import Threat as ThreatModel
 from shared_kernel.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)

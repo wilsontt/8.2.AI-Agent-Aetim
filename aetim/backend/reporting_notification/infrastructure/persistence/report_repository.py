@@ -174,7 +174,7 @@ class ReportRepository(IReportRepository):
             existing.period_start = report.period_start
             existing.period_end = report.period_end
             existing.summary = report.summary
-            existing.metadata = metadata_json
+            existing.report_metadata = metadata_json
             existing.ticket_status = ticket_status_value
         else:
             # 新增報告
@@ -188,7 +188,7 @@ class ReportRepository(IReportRepository):
                 period_start=report.period_start,
                 period_end=report.period_end,
                 summary=report.summary,
-                metadata=metadata_json,
+                report_metadata=metadata_json,
                 ticket_status=ticket_status_value,
             )
             self.session.add(new_report)
@@ -384,7 +384,7 @@ class ReportRepository(IReportRepository):
         metadata = None
         if model.metadata:
             try:
-                metadata = json.loads(model.metadata)
+                metadata = json.loads(model.report_metadata)
             except (json.JSONDecodeError, TypeError):
                 logger.warning(
                     "無法解析報告元資料 JSON",

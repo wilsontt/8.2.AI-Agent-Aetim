@@ -13,8 +13,24 @@ import os
 import sys
 from pathlib import Path
 
+# 載入 .env 檔案（在讀取環境變數之前）
+from dotenv import load_dotenv
+
+# 尋找專案根目錄的 .env 檔案
+# alembic/env.py 位於 backend/alembic/env.py
+# 專案根目錄位於 backend/../ (即 aetim/)
+backend_dir = Path(__file__).resolve().parent.parent
+project_root = backend_dir.parent
+env_file = project_root / ".env"
+
+if env_file.exists():
+    load_dotenv(env_file)
+    print(f"✓ 已載入環境變數檔案: {env_file}")
+else:
+    print(f"⚠ 警告: 找不到 .env 檔案: {env_file}")
+
 # 將專案根目錄加入 Python 路徑
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(backend_dir))
 
 from alembic import context
 from shared_kernel.infrastructure.database import Base, DATABASE_URL

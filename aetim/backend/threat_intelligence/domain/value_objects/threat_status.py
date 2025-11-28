@@ -27,14 +27,6 @@ class ThreatStatus:
     # 有效值列表
     VALID_VALUES = ["New", "Analyzing", "Processed", "Closed"]
     
-    # 狀態轉換規則（從當前狀態可以轉換到哪些狀態）
-    TRANSITION_RULES: Dict[str, List[str]] = {
-        "New": ["Analyzing", "Closed"],
-        "Analyzing": ["Processed", "Closed"],
-        "Processed": ["Closed"],
-        "Closed": [],  # 已關閉的狀態不能再轉換
-    }
-    
     def __post_init__(self):
         """驗證狀態值"""
         if self.value not in self.VALID_VALUES:
@@ -56,9 +48,17 @@ class ThreatStatus:
         if target_status not in self.VALID_VALUES:
             return False
         
-        allowed_transitions = self.TRANSITION_RULES.get(self.value, [])
+        allowed_transitions = ThreatStatus.TRANSITION_RULES.get(self.value, [])
         return target_status in allowed_transitions
     
     def __str__(self) -> str:
         return self.value
 
+
+# 狀態轉換規則（從當前狀態可以轉換到哪些狀態）（類別變數，在類別定義後設定以避免 dataclass 欄位問題）
+ThreatStatus.TRANSITION_RULES: Dict[str, List[str]] = {
+    "New": ["Analyzing", "Closed"],
+    "Analyzing": ["Processed", "Closed"],
+    "Processed": ["Closed"],
+    "Closed": [],  # 已關閉的狀態不能再轉換
+}

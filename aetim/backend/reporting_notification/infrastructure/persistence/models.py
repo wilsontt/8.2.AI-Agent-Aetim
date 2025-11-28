@@ -44,7 +44,7 @@ class Report(Base):
 
     # 內容
     summary = Column(Text, nullable=True, comment="AI 生成的摘要")
-    metadata = Column(Text, nullable=True, comment="報告元資料（JSON 格式）")
+    report_metadata = Column(Text, nullable=True, comment="報告元資料（JSON 格式）")
     
     # 工單狀態（僅用於 IT_Ticket 類型，AC-017-5）
     ticket_status = Column(String(20), nullable=True, comment="工單狀態（待處理/處理中/已完成/已關閉）")

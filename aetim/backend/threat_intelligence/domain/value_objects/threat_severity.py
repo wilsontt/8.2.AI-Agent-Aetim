@@ -18,14 +18,6 @@ class ThreatSeverity:
     
     value: str  # Critical, High, Medium, Low
     
-    # 嚴重程度權重（用於風險計算）
-    WEIGHTS: Dict[str, float] = {
-        "Critical": 1.5,
-        "High": 1.2,
-        "Medium": 1.0,
-        "Low": 0.8,
-    }
-    
     # 有效值列表
     VALID_VALUES = ["Critical", "High", "Medium", "Low"]
     
@@ -40,8 +32,16 @@ class ThreatSeverity:
     @property
     def weight(self) -> float:
         """取得嚴重程度權重"""
-        return self.WEIGHTS.get(self.value, 1.0)
+        return ThreatSeverity.WEIGHTS.get(self.value, 1.0)
     
     def __str__(self) -> str:
         return self.value
 
+
+# 嚴重程度權重（用於風險計算）（類別變數，在類別定義後設定以避免 dataclass 欄位問題）
+ThreatSeverity.WEIGHTS: Dict[str, float] = {
+    "Critical": 1.5,
+    "High": 1.2,
+    "Medium": 1.0,
+    "Low": 0.8,
+}

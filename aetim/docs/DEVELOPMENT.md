@@ -34,8 +34,11 @@ pip install -r requirements.txt
 建立 `.env` 檔案：
 
 ```env
+# 資料庫設定
 DATABASE_URL=sqlite+aiosqlite:///./data/aetim.db
+# Redis 設定
 REDIS_URL=redis://localhost:6379/0
+# 日誌設定
 LOG_LEVEL=DEBUG
 ```
 

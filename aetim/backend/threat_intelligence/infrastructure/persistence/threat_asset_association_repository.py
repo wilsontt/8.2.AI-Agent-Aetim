@@ -8,7 +8,7 @@ from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from ..models import ThreatAssetAssociation as ThreatAssetAssociationModel
+from analysis_assessment.infrastructure.persistence.models import ThreatAssetAssociation as ThreatAssetAssociationModel
 from shared_kernel.infrastructure.logging import get_logger
 
 logger = get_logger(__name__)

@@ -17,13 +17,6 @@ class DataSensitivity:
     權重用於風險分數計算。
     """
     
-    # 權重對照表
-    WEIGHTS: dict[str, float] = {
-        "高": 1.5,
-        "中": 1.0,
-        "低": 0.5,
-    }
-    
     value: Literal["高", "中", "低"]
     
     def __post_init__(self):
@@ -51,3 +44,10 @@ class DataSensitivity:
     def __repr__(self):
         return f"DataSensitivity(value='{self.value}', weight={self.weight})"
 
+
+# 權重對照表（類別變數，在類別定義後設定以避免 dataclass 欄位問題）
+DataSensitivity.WEIGHTS = {
+    "高": 1.5,
+    "中": 1.0,
+    "低": 0.5,
+}

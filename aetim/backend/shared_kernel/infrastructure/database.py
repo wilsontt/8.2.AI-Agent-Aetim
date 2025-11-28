@@ -16,10 +16,22 @@ DATA_DIR = os.path.join(
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # 資料庫 URL（從環境變數讀取）
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    f"sqlite+aiosqlite:///{os.path.join(DATA_DIR, 'aetim.db')}",
-)
+# 如果環境變數中的路徑是相對路徑，需要轉換為絕對路徑
+db_url_from_env = os.getenv("DATABASE_URL")
+if db_url_from_env:
+    # 處理相對路徑：如果 URL 包含相對路徑（如 ./data/aetim.db），轉換為絕對路徑
+    if db_url_from_env.startswith("sqlite+aiosqlite:///./"):
+        # 相對路徑，轉換為絕對路徑
+        relative_path = db_url_from_env.replace("sqlite+aiosqlite:///./", "")
+        # 相對於專案根目錄（backend 的父目錄）
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        absolute_path = os.path.join(project_root, relative_path)
+        DATABASE_URL = f"sqlite+aiosqlite:///{absolute_path}"
+    else:
+        DATABASE_URL = db_url_from_env
+else:
+    # 使用預設路徑
+    DATABASE_URL = f"sqlite+aiosqlite:///{os.path.join(DATA_DIR, 'aetim.db')}"
 
 # 建立非同步引擎
 engine = create_async_engine(
