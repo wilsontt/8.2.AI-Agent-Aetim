@@ -55,6 +55,7 @@ class ReportScheduleRepository(IReportScheduleRepository):
                 existing.is_enabled = schedule.is_enabled
                 existing.recipients = json.dumps(schedule.recipients, ensure_ascii=False)
                 existing.file_format = schedule.file_format
+                existing.timezone = schedule.timezone
                 existing.last_run_at = schedule.last_run_at
                 existing.next_run_at = schedule.next_run_at
                 existing.updated_at = schedule.updated_at
@@ -67,6 +68,7 @@ class ReportScheduleRepository(IReportScheduleRepository):
                     is_enabled=schedule.is_enabled,
                     recipients=json.dumps(schedule.recipients, ensure_ascii=False),
                     file_format=schedule.file_format,
+                    timezone=schedule.timezone,
                     last_run_at=schedule.last_run_at,
                     next_run_at=schedule.next_run_at,
                     created_at=schedule.created_at,
@@ -224,6 +226,7 @@ class ReportScheduleRepository(IReportScheduleRepository):
             is_enabled=model.is_enabled,
             recipients=recipients,
             file_format=model.file_format,
+            timezone=model.timezone,
             created_at=model.created_at,
             updated_at=model.updated_at,
             last_run_at=model.last_run_at,

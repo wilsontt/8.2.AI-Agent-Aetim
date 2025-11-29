@@ -17,7 +17,7 @@ export default defineConfig({
     ["junit", { outputFile: "test-results/junit.xml" }],
   ],
   use: {
-    baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000",
+    baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3030",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -39,7 +39,7 @@ export default defineConfig({
 
   webServer: {
     command: "npm run dev",
-    url: "http://localhost:3000",
+    url: "http://localhost:3030",
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,
   },

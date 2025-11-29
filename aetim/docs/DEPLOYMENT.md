@@ -50,7 +50,7 @@ OAUTH2_CLIENT_SECRET=your_client_secret
 OAUTH2_AUTHORIZATION_ENDPOINT=https://idp.example.com/authorize
 OAUTH2_TOKEN_ENDPOINT=https://idp.example.com/token
 OAUTH2_USERINFO_ENDPOINT=https://idp.example.com/userinfo
-OAUTH2_REDIRECT_URI=http://localhost:3000/callback
+OAUTH2_REDIRECT_URI=http://localhost:3030/callback
 
 # 日誌設定
 LOG_LEVEL=INFO
@@ -99,7 +99,7 @@ docker-compose exec backend python scripts/seed_roles_and_permissions.py
 curl http://localhost:8000/api/v1/health
 
 # 前端
-curl http://localhost:3000
+curl http://localhost:3030
 ```
 
 ### 本地開發（不使用 Docker）

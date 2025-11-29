@@ -109,7 +109,7 @@ aetim/
   - API 文件：http://localhost:8000/docs
   - 健康檢查：http://localhost:8000/api/v1/health
 
-- **前端應用**：http://localhost:3000
+- **前端應用**：http://localhost:3030
 
 - **AI 服務**：http://localhost:8001
   - 健康檢查：http://localhost:8001/health

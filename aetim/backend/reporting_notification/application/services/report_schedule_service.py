@@ -12,6 +12,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.asyncio import AsyncIOExecutor
 import structlog
+import os
 
 from ...domain.aggregates.report_schedule import ReportSchedule
 from ...domain.value_objects.report_type import ReportType
@@ -48,6 +49,9 @@ class ReportScheduleService:
         self.schedule_repository = schedule_repository
         self.report_service = report_service
         
+        # 從環境變數讀取預設時區
+        self._default_timezone = os.getenv('TZ', 'Asia/Taipei')
+        
         # 初始化 APScheduler
         jobstores = {
             'default': MemoryJobStore()
@@ -64,7 +68,7 @@ class ReportScheduleService:
             jobstores=jobstores,
             executors=executors,
             job_defaults=job_defaults,
-            timezone='UTC'
+            timezone=self._default_timezone  # 使用從環境變數讀取的時區
         )
         
         self._job_id_prefix = "report_generation_"
@@ -123,6 +127,7 @@ class ReportScheduleService:
         cron_expression: str,
         recipients: List[str],
         file_format: str = "HTML",
+        timezone: Optional[str] = None,
         is_enabled: bool = True,
     ) -> ReportSchedule:
         """
@@ -133,16 +138,22 @@ class ReportScheduleService:
             cron_expression: Cron 表達式（例如："0 9 * * 1" 表示每週一上午 9:00）
             recipients: 收件人清單（Email 地址）
             file_format: 檔案格式（預設：HTML）
+            timezone: 時區設定（預設：使用環境變數 TZ）
             is_enabled: 是否啟用（預設：True）
         
         Returns:
             ReportSchedule: 報告排程聚合根
         """
+        # 如果未指定時區，使用預設時區
+        if timezone is None:
+            timezone = self._default_timezone
+        
         schedule = ReportSchedule.create(
             report_type=report_type,
             cron_expression=cron_expression,
             recipients=recipients,
             file_format=file_format,
+            timezone=timezone,
             is_enabled=is_enabled,
         )
         
@@ -195,6 +206,7 @@ class ReportScheduleService:
                 day=cron_parts[2],
                 month=cron_parts[3],
                 day_of_week=cron_parts[4],
+                timezone=schedule.timezone  # 使用排程的時區設定
             )
         except Exception as e:
             logger.error(
@@ -260,6 +272,7 @@ class ReportScheduleService:
         cron_expression: Optional[str] = None,
         recipients: Optional[List[str]] = None,
         file_format: Optional[str] = None,
+        timezone: Optional[str] = None,
         is_enabled: Optional[bool] = None,
     ) -> ReportSchedule:
         """
@@ -270,6 +283,7 @@ class ReportScheduleService:
             cron_expression: 新的 Cron 表達式（可選）
             recipients: 新的收件人清單（可選）
             file_format: 新的檔案格式（可選）
+            timezone: 新的時區設定（可選）
             is_enabled: 是否啟用（可選）
         
         Returns:
@@ -287,6 +301,7 @@ class ReportScheduleService:
             cron_expression=cron_expression,
             recipients=recipients,
             file_format=file_format,
+            timezone=timezone,
             is_enabled=is_enabled,
         )
         

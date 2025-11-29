@@ -176,6 +176,10 @@ class ReportSchedule(Base):
     file_format = Column(
         String(20), nullable=False, default="HTML", comment="檔案格式（HTML/PDF）"
     )
+    timezone = Column(
+        String(50), nullable=False, default="Asia/Taipei",
+        comment="時區設定（例如：Asia/Taipei、UTC）"
+    )
 
     # 執行時間
     last_run_at = Column(DateTime, nullable=True, comment="最後執行時間")

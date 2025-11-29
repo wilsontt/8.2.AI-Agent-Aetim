@@ -26,6 +26,7 @@ class ReportSchedule:
     is_enabled: bool
     recipients: List[str]  # Email 收件人清單
     file_format: str = "HTML"  # 檔案格式（HTML/PDF）
+    timezone: str = "Asia/Taipei"  # 時區設定
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
     last_run_at: Optional[datetime] = None
@@ -47,6 +48,7 @@ class ReportSchedule:
         cron_expression: str,
         recipients: List[str],
         file_format: str = "HTML",
+        timezone: str = "Asia/Taipei",
         is_enabled: bool = True,
         schedule_id: Optional[str] = None,
     ) -> "ReportSchedule":
@@ -58,6 +60,7 @@ class ReportSchedule:
             cron_expression: Cron 表達式
             recipients: 收件人清單
             file_format: 檔案格式（預設：HTML）
+            timezone: 時區設定（預設：Asia/Taipei）
             is_enabled: 是否啟用（預設：True）
             schedule_id: 排程 ID（可選，預設自動生成）
         
@@ -71,6 +74,7 @@ class ReportSchedule:
             is_enabled=is_enabled,
             recipients=recipients,
             file_format=file_format,
+            timezone=timezone,
         )
     
     def update_schedule(
@@ -78,6 +82,7 @@ class ReportSchedule:
         cron_expression: Optional[str] = None,
         recipients: Optional[List[str]] = None,
         file_format: Optional[str] = None,
+        timezone: Optional[str] = None,
         is_enabled: Optional[bool] = None,
     ) -> None:
         """
@@ -87,6 +92,7 @@ class ReportSchedule:
             cron_expression: 新的 Cron 表達式（可選）
             recipients: 新的收件人清單（可選）
             file_format: 新的檔案格式（可選）
+            timezone: 新的時區設定（可選）
             is_enabled: 是否啟用（可選）
         """
         if cron_expression is not None:
@@ -101,6 +107,11 @@ class ReportSchedule:
         
         if file_format is not None:
             self.file_format = file_format
+        
+        if timezone is not None:
+            if not timezone.strip():
+                raise ValueError("時區設定不能為空")
+            self.timezone = timezone
         
         if is_enabled is not None:
             self.is_enabled = is_enabled
