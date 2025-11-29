@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 
 from shared_kernel.infrastructure.logging import setup_logging, get_logger
 from shared_kernel.infrastructure.tracing import TracingMiddleware
-from api.controllers import health, assets, threats, reports, metrics, pirs, threat_feeds, audit_logs, auth, system_configuration, system_status, threat_statistics, asset_statistics
+from api.controllers import health, assets, threats, reports, metrics, pirs, threat_feeds, audit_logs, auth, system_configuration, system_status, threat_statistics, asset_statistics, schedules
 from shared_kernel.infrastructure.database import init_db
 from shared_kernel.infrastructure.redis import init_redis, close_redis
 import os
@@ -34,6 +34,18 @@ async def lifespan(app: FastAPI):
     
     await init_redis()
     await init_db()
+    
+    # 初始化報告排程服務（僅用於時區支援測試，暫不執行實際排程）
+    logger.info("Initializing Report Schedule Service for timezone support")
+    
+    # 註釋：目前先不啟動完整的 ReportScheduleService
+    # 因為需要完整的 ReportService 依賴，這會增加啟動複雜度
+    # 先驗證 backend 是否能正常啟動
+    #
+    # TODO: 後續可透過以下方式之一完成整合：
+    # 1. 創建完整的依賴注入容器
+    # 2. 使用 mock ReportService 僅用於排程（不實際執行報告生成）
+    # 3. 在前端直接調用 backend API 管理排程，不使用獨立scheduler
     
     logger.info("Application started successfully")
     
@@ -98,6 +110,7 @@ app.include_router(threat_feeds.router, prefix="/api/v1/threat-feeds", tags=["Th
 app.include_router(audit_logs.router, prefix="/api/v1/audit-logs", tags=["Audit Logs"])
 app.include_router(threats.router, prefix="/api/v1/threats", tags=["Threats"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
+app.include_router(schedules.router, prefix="/api/v1/schedules", tags=["Schedules"])
 app.include_router(system_configuration.router, tags=["系統設定"])
 app.include_router(system_status.router, tags=["系統狀態"])
 app.include_router(threat_statistics.router, tags=["威脅統計"])

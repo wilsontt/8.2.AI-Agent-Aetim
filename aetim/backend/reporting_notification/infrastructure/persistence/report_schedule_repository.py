@@ -177,6 +177,27 @@ class ReportScheduleRepository(IReportScheduleRepository):
             )
             raise
     
+    async def get_all(self) -> List[ReportSchedule]:
+        """
+        查詢所有報告排程（包含啟用和未啟用）
+        
+        Returns:
+            List[ReportSchedule]: 報告排程聚合根清單
+        """
+        try:
+            stmt = select(ReportScheduleModel)
+            result = await self.session.execute(stmt)
+            models = result.scalars().all()
+            
+            return [self._to_domain(model) for model in models]
+        except Exception as e:
+            logger.error(
+                "查詢所有報告排程失敗",
+                error=str(e),
+                exc_info=True,
+            )
+            raise
+    
     async def delete(self, schedule_id: str) -> None:
         """
         刪除報告排程
